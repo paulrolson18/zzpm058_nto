@@ -1,0 +1,304 @@
+/**
+ * Copyright 2026 Salesforce, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+const vertical = process.env.VERTICAL ?? 'fashion';
+// Per-vertical Lighthouse script/document ceilings. This branch (@W-23493124@) and main each raised
+// sizes independently; on merge we keep the LARGER ceiling per vertical so neither side's headroom
+// regresses.
+//   - Footwear PDP: both sides land at 486 KB (this branch's main-baseline-drift absorption; main's
+//     canonical `useVariationMedia` hook W-24144914 + Shopper Agent shell helper W-24210721). The
+//     attribution feature this PR adds is not the cause — it contributes ~91B (482092 without vs
+//     482183 with, within run-to-run noise).
+//   - Cart: footwear 538 KB (this branch, above main's 535 KB) plus main's luxury tier, raised to
+//     536 KB (luxury joined the Lighthouse matrix in W-24144914); other verticals stay at 530 KB.
+//   - Luxury drift (post-merge CI): the merged shared shell (this branch's attribution capture +
+//     main's baseline) pushed luxury just past two tiers — home 411584 (> the shared 411 KB) and
+//     cart 534285 (> the 533 KB luxury tier). Both are luxury-only overages (the other five verticals
+//     still pass unchanged), so luxury takes a dedicated 413 KB home tier and a 536 KB cart ceiling,
+//     each with modest headroom (~1.4-1.7 KB) over the measured median.
+// Raised for the inline Add-to-Cart quantity stepper (@W-24184213@). ProductCartActions grew to
+// host the stepper's error boundary, Suspense fallback, and lazy-loaded controller; it's reachable
+// eagerly from the cart-item edit modal (cart route) and from every vertical's PDP. Three size
+// mitigations already landed in this branch (deduping the fallback button markup, lazy-loading the
+// connected controller, splitting the child-product gallery into its own chunk) before these ceilings
+// were touched.
+//   - PDP zoom (@W-24184223@, 2026-09-21, merged from main): the accessible image-zoom feature
+//     extracts the shared gallery rendering out of `image-gallery/index.tsx` into
+//     `image-gallery/gallery-content.tsx` so ProductZoomGallery can reuse it without duplicating
+//     markup. That seam ships to every vertical's product page; the lightbox chunk stays lazy-loaded.
+// Both features land on the shared PDP/home product-view chunks, so on merge we keep the LARGER
+// ceiling per vertical and re-measured the combined build. Per-route numbers are CI-measured.
+// Home tiers absorb baseline drift the rebase pulled in from main's stepper (@W-24184213@), not this
+// PR (CI medians: luxury 415294, footwear 413151, cosmetic 411404, furniture 411099).
+// Raised across the non-canonical home tiers for the mini-cart close-flush confirmation toast
+// (@W-24310245@): the fix mounts a root-level CartMutationToastWatcher plus a tiny module-scoped mutation
+// registry so a quantity change or remove that was flushed as the drawer closed still fires its toast after
+// the owning line item unmounted. That watcher and its store ship in the shared root chunk every page loads,
+// adding ~1.6 KB (measured uniformly on cosmetic/footwear/luxury, which the furniture-only home commits do
+// not touch, so the growth is attributable to this fix, not baseline drift). CI medians rose to luxury
+// 417596, footwear 415592, cosmetic 413822, furniture 413507; each tier keeps ~1.5 KB headroom. Lazy-loading
+// the toast leaf was rejected: the async import gap lets React Router purge the settled fetcher before the
+// leaf re-attaches, reintroducing the lost-toast bug. Fashion/foundations (411000) still pass, untouched.
+const homeScriptSizeLimit =
+    vertical === 'luxury'
+        ? 419000
+        : vertical === 'footwear'
+          ? 417000
+          : vertical === 'cosmetic' || vertical === 'furniture'
+            ? 415000
+            : 411000;
+// Product ceilings re-measured after the latest upstream/main merge: the combined PDP chunk landed a
+// touch above the earlier raise on the three verticals that carry the most PDP code (CI medians:
+// footwear 499656, luxury 491466, cosmetic 486286). Each ceiling sits ~1.5 KB above its measured
+// median. Cosmetic and luxury get their own tiers so the fashion/foundations default (485 KB), which
+// still passes, keeps its existing headroom.
+// Furniture raised 489000 -> 495000 (@W-24184219@): its 489 KB tier was a carryover that was never
+// re-measured against the inline Add-to-Cart stepper baseline, and post-#2790 main merges drifted the
+// shared PDP chunk up. Furniture now medians 493467 across the five CI runs. This PR (opt-in quantity
+// mode) only adds a ~30 B config literal to the furniture config, so it is not the cause; 495000 keeps
+// the file's ~1.5 KB headroom over the measured median.
+// Furniture PDP raised 495000 -> 498000 for the same close-flush watcher (@W-24310245@): the shared root
+// chunk lands on the product view too, so furniture's PDP median rose to 496618. 498000 keeps ~1.4 KB
+// headroom. The other verticals' PDP tiers still pass (only furniture breached here) and stay untouched.
+const productScriptSizeLimit =
+    vertical === 'footwear'
+        ? 501000
+        : vertical === 'luxury'
+          ? 493000
+          : vertical === 'furniture'
+            ? 498000
+            : vertical === 'cosmetic'
+              ? 488000
+              : 485000;
+const productDocumentSizeLimit = vertical === 'furniture' ? 69000 : 55000;
+const cartScriptSizeLimit = vertical === 'footwear' ? 543000 : vertical === 'luxury' ? 541500 : 535000;
+
+module.exports = {
+    ci: {
+        collect: {
+            numberOfRuns: 5,
+            startServerCommand: 'cross-env NODE_OPTIONS=--conditions=dev-data-store pnpm start --port 3001',
+            startServerReadyPattern: 'SFCC Storefront Next',
+            startServerReadyTimeout: 30000,
+            url: [
+                'http://localhost:3001/RefArchGlobal/en-GB/',
+                // 'http://localhost:3001/RefArchGlobal/en-GB/c/womens-clothing-tops',
+                'http://localhost:3001/RefArchGlobal/en-GB/p/25591227M?color=JJ9DFXX',
+                'http://localhost:3001/RefArchGlobal/en-GB/cart',
+            ],
+            settings: {
+                formFactor: 'mobile',
+                screenEmulation: {
+                    mobile: true,
+                    width: 360,
+                    height: 780,
+                    deviceScaleFactor: 3,
+                    disabled: false,
+                },
+                throttling: {
+                    rttMs: 100,
+                    cpuSlowdownMultiplier: 3.5,
+                    downloadThroughputKbps: 9000,
+                    uploadThroughputKbps: 3000,
+                },
+                extraHeaders: {
+                    Cookie: 'dw_dnt=1;',
+                },
+            },
+        },
+        assert: {
+            // TEMPORARY (2026-06-19): `categories:best-practices` lowered from 0.96 to 0.7.
+            // The cause is external to this codebase: the DIS image CDN edge (fronted by
+            // Cloudflare) began setting a `_cfuvid` third-party cookie on every image
+            // response. Chrome flags it, failing the `third-party-cookies` (weight 5) and
+            // `inspector-issues` (weight 1) audits, which drops the category score to ~0.79
+            // (home) / ~0.75 (product) on every branch — no code change can fix it here.
+            // RESTORE to 0.96 once the cookie is removed at the CDN. Mirrors the retail-app
+            // baseline (`template-retail-rsc-app/lighthouserc.cjs`, #2074).
+            assertMatrix: [
+                {
+                    matchingUrlPattern: '.*RefArchGlobal/en-GB/$',
+                    assertions: {
+                        'is-on-https': 'off',
+                        'redirects-http': 'off',
+                        'render-blocking-resources': ['warn', { maxNumericValue: 0 }],
+                        'categories:performance': ['error', { minScore: 0.65, aggregationMethod: 'median' }],
+                        'categories:accessibility': ['error', { minScore: 0.91, aggregationMethod: 'median' }],
+                        'categories:seo': ['error', { minScore: 0.91, aggregationMethod: 'median' }],
+                        'categories:best-practices': ['error', { minScore: 0.7, aggregationMethod: 'median' }],
+                        'resource-summary:script:size': [
+                            'error',
+                            { maxNumericValue: homeScriptSizeLimit, aggregationMethod: 'median' },
+                        ],
+                        'resource-summary:document:size': [
+                            'error',
+                            { maxNumericValue: 54000, aggregationMethod: 'median' },
+                        ],
+                    },
+                },
+                {
+                    matchingUrlPattern: '.*category.*',
+                    assertions: {
+                        'is-on-https': 'off',
+                        'redirects-http': 'off',
+                        'render-blocking-resources': ['warn', { maxNumericValue: 0 }],
+                        'categories:performance': ['error', { minScore: 0.67, aggregationMethod: 'median' }],
+                        'categories:accessibility': ['error', { minScore: 0.91, aggregationMethod: 'median' }],
+                        'categories:seo': ['error', { minScore: 0.91, aggregationMethod: 'median' }],
+                        'categories:best-practices': ['error', { minScore: 0.7, aggregationMethod: 'median' }],
+                        'resource-summary:script:size': [
+                            'error',
+                            { maxNumericValue: 365000, aggregationMethod: 'median' },
+                        ],
+                        'resource-summary:document:size': [
+                            'error',
+                            { maxNumericValue: 60000, aggregationMethod: 'median' },
+                        ],
+                    },
+                },
+                {
+                    matchingUrlPattern: '.*product.*',
+                    assertions: {
+                        'is-on-https': 'off',
+                        'redirects-http': 'off',
+                        'render-blocking-resources': ['warn', { maxNumericValue: 0 }],
+                        'categories:performance': ['error', { minScore: 0.6, aggregationMethod: 'median' }],
+                        'categories:accessibility': ['error', { minScore: 0.91, aggregationMethod: 'median' }],
+                        'categories:seo': ['error', { minScore: 0.91, aggregationMethod: 'median' }],
+                        'categories:best-practices': ['error', { minScore: 0.7, aggregationMethod: 'median' }],
+                        // Per-vertical ceilings above (`productScriptSizeLimit`) absorb each vertical's
+                        // own PDP baseline: footwear's size/width/colorway controls and SEO URL generator
+                        // plus its zoom trigger, furniture's product overlay plus its zoom trigger,
+                        // luxury's baseline drift plus the shared gallery-content extraction, and
+                        // cosmetic's shared gallery-content extraction alone. See the top-of-file comment
+                        // for the measured medians behind each tier.
+                        'resource-summary:script:size': [
+                            'error',
+                            { maxNumericValue: productScriptSizeLimit, aggregationMethod: 'median' },
+                        ],
+                        // Furniture's PDP server-renders its service configuration and recommendation
+                        // rails. Its measured mirrored document median is 68051 B across five runs.
+                        'resource-summary:document:size': [
+                            'error',
+                            { maxNumericValue: productDocumentSizeLimit, aggregationMethod: 'median' },
+                        ],
+                    },
+                },
+                {
+                    matchingUrlPattern: '.*cart.*',
+                    assertions: {
+                        'is-on-https': 'off',
+                        'redirects-http': 'off',
+                        'render-blocking-resources': ['warn', { maxNumericValue: 0 }],
+                        'categories:performance': ['error', { minScore: 0.64, aggregationMethod: 'median' }],
+                        'categories:accessibility': ['error', { minScore: 0.91, aggregationMethod: 'median' }],
+                        'categories:seo': ['error', { minScore: 0.91, aggregationMethod: 'median' }],
+                        'categories:best-practices': ['error', { minScore: 0.7, aggregationMethod: 'median' }],
+                        // Slightly above the baseline (`template-retail-rsc-app`: 420000) to absorb the
+                        // ~2KB overhead from cart-route imports going through `@salesforce/storefront-ui`
+                        // instead of inlined `@/components/ui/*`. Mirror output flattens those back to
+                        // local imports so customer artifacts re-tighten under the baseline budget.
+                        // Raised again (+2KB, @W-23383562@) because `_app.tsx` now calls
+                        // `useWishlistSession` unconditionally on every route, pulling the wishlist
+                        // provider into the shared shell bundle instead of only the routes that
+                        // mount it directly (cart, wishlist page).
+                        // Raised 490000 → 495000: the feature/passkeys baseline grew the cart route
+                        // chunk (cosmetic mirror measured 492663). Raised further 495000 → 500000
+                        // on main; keep the higher ceiling to absorb both baselines.
+                        // Raised again (+1KB, @W-23521393@) for the guest order cancel/return i18n
+                        // strings added to the en-GB locale chunk (order cancel keys, order return +
+                        // a11y strings), which this URL's script payload includes.
+                        // Raised 500000 → 501000: cosmetic mirror measured 500094 after merging the
+                        // cancel/return work into split-commits.
+                        // Raised 501000 → 502000: mega-menu embedded region wiring grew the cart
+                        // shared chunk (CI measured 501930 across 5 runs).
+                        // Raised 502000 → 502500: the shared CarouselSection `centerWhenPartial`
+                        // opt-in (a prop default + one conditional `justify-center-safe` class)
+                        // ships in the cart recommendations carousel chunk (CI measured 502064
+                        // across 5 runs). The prop is irreducible — it is the feature — so absorb
+                        // the ~64B with a small headroom bump rather than dropping the capability.
+                        // Raised 502500 → 505000: cosmetic mirror measured 504405 after merging
+                        // cancel/return + main into split-commits.
+                        // Raised 505000 → 506000 (@W-23729798@): the Image design-mode empty state
+                        // adds the `showEmptyState`/`resolveAssetUrl` branch, the placeholder URL
+                        // constant, and its i18n string to the shared DynamicImage module, which the
+                        // cart line-item images pull in (CI measured 505567 across 5 runs). The
+                        // branch is irreducible — it is the feature — so absorb the ~567B rather
+                        // than dropping the authoring affordance.
+                        // Raised 506000 → 508000 (@W-23908487@): the Product Tile design-mode empty
+                        // state adds the no-product placeholder branch (placeholder card, currency
+                        // guard, star-rating group) to the shared ProductTile module, which the cart
+                        // recommendations carousel chunk pulls in (CI measured 506687, zero variance
+                        // across 5 runs). The branch is irreducible — it is the feature — so absorb
+                        // the ~687B rather than dropping the authoring affordance.
+                        // Also absorbed within this 508000 ceiling (@W-23325668@): the cart mobile
+                        // summary panel reserves its measured height as real content bottom padding
+                        // via a ResizeObserver that mirrors the live panel height into a CSS custom
+                        // property, with save/restore of the documentElement scroll-padding, so the
+                        // final cart action stays visible and focusable under the fixed panel at 400%
+                        // zoom. That wiring adds ~91B on top of the Product Tile median (combined
+                        // ~506778), which 508000 still clears with headroom.
+                        // (@W-23729831@ Hero Carousel: no further raise — its empty state ships only in
+                        // the homepage chunk, not cart; the 508000 ceiling already absorbs the ~506201
+                        // main baseline drift this branch previously observed.)
+                        // Footwear PDP work (@W-23751953@) also lands a generic `thumbnailLabel`
+                        // accessible-name fallback in this shared chunk via the canonical
+                        // ImageGallery (~83B). It fits under this same 508000 ceiling; the
+                        // lighthouse-cosmetic CI run on the merged branch confirms the combined median.
+                        // Raised 508000 → 509000 (@W-23751957@): the footwear colorway overlay needs
+                        // the selected variant's authoritative inventory before purchase, so the
+                        // canonical ProductViewProvider now threads an `isVariantInventoryLoading`
+                        // flag and ProductCartActions gates Add to Cart / Buy Now / express payments
+                        // on it. That wiring ships in the shared chunk the cart recommendations
+                        // carousel pulls in (cosmetic mirror measured 508054, zero variance across 5
+                        // runs). The gate is irreducible — it is the fix that stops purchasing a SKU
+                        // whose inventory has not resolved — so absorb the ~54B with headroom rather
+                        // than dropping it.
+                        // Raised 509000 → 513000: delivery-estimate integration, private destination-cookie
+                        // hydration, and the Furniture PDP feature add canonical
+                        // image-swatch rendering (swatch-group image tiles + the `custom-swatch-images`
+                        // resolver), ProductCartActions `additionalItems` product-set batching, and the
+                        // ProductTile inline quick-add placement. None touch the cart route directly, but
+                        // they ship in the shared chunk the cart recommendations carousel and the
+                        // bundle/set child-product-card swatches pull in. The combined feature branch
+                        // measures 513399 (fashion), 513374 (foundations), and 516592 (cosmetic) across
+                        // five deterministic runs, so 520000 preserves the smallest measured headroom.
+                        // Raised 520000 → 530000: critical Page Designer regions now preload their
+                        // component modules before hydration. Lighthouse counts those intentionally
+                        // early module requests as cart script resources even though the cart entry
+                        // bundle itself has not grown by the same amount.
+                        // Footwear additionally loads the configurable SEO URL generator for cart-item
+                        // PDP links. Its mirrored payload measures 533586 B across five deterministic runs.
+                        'resource-summary:script:size': [
+                            'error',
+                            { maxNumericValue: cartScriptSizeLimit, aggregationMethod: 'median' },
+                        ],
+                        // Cart SSR HTML sits right at ~31025-31040 bytes across 5 runs.
+                        // The 31000 ceiling was too tight - multiple unrelated PRs hit
+                        // 25-40 byte overshoots even on retry. 32000 gives ~1kB headroom
+                        // above the observed variance without loosening the intent.
+                        'resource-summary:document:size': [
+                            'error',
+                            { maxNumericValue: 33000, aggregationMethod: 'median' },
+                        ],
+                    },
+                },
+            ],
+        },
+        upload: {
+            target: 'temporary-public-storage',
+        },
+    },
+};

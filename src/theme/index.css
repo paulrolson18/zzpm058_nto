@@ -1,0 +1,7 @@
+@import 'tailwindcss' source(none);
+
+@source '../**/*.{ts,tsx}';
+@source not '../**/*.test.{ts,tsx}';
+@source not '../**/*.stories.{ts,tsx}';
+
+@import './shared.css';

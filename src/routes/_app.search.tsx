@@ -1,0 +1,436 @@
+/**
+ * Copyright 2026 Salesforce, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import { useCallback, useEffect, useMemo, useRef, useTransition } from 'react';
+import { useAsyncError, useLocation, useNavigation } from 'react-router';
+import type { Route } from './+types/_app.search';
+import type { ShopperSearch } from '@/scapi';
+import { NormalizedApiError } from '@/lib/api/normalized-api-error';
+import { fetchSearchProducts } from '@/lib/api/search.server';
+import { getConfig, useConfig } from '@salesforce/storefront-next-runtime/config';
+import { siteContext, useSite } from '@salesforce/storefront-next-runtime/site-context';
+import { getLogger } from '@/lib/logger.server';
+import CategoryPagination from '@/components/category-pagination';
+import ActiveFilters from '@/components/category-refinements/active-filters';
+import FiltersButton from '@/components/category-refinements/filters-button';
+import CategoryRefinements from '@/components/category-refinements';
+import CategorySorting from '@/components/category-sorting';
+import DeferredProductGrid from '@/components/product-grid';
+import { useTranslation } from 'react-i18next';
+import { useAnalytics } from '@/hooks/use-analytics';
+import { PageType } from '@/lib/decorators/page-type';
+import { RegionDefinition } from '@/lib/decorators/region-definition';
+import { Region } from '@/components/region';
+import { SeoMeta } from '@/components/seo-meta';
+import { buildSeoPageUrl } from '@/lib/seo/page-url.server';
+import { redirectToCanonicalPath } from '@/lib/seo/canonical-redirect.server';
+import { fetchPageWithComponentData } from '@/lib/page-designer/page-loader.server';
+import {
+    getInitialFiltersOpen,
+    getSearchWithoutFiltersParam,
+    useFiltersPanelState,
+} from '@/hooks/use-filters-panel-state';
+
+@PageType({
+    name: 'Search Results Page',
+    description: 'Search results page with product listings and personalized content',
+    supportedAspectTypes: [],
+})
+@RegionDefinition([
+    {
+        id: 'searchTopFullWidth',
+        name: 'Top Full Width Region',
+        description: 'Full screen width region at the top of search results',
+        maxComponents: 5,
+    },
+    {
+        id: 'searchTopContent',
+        name: 'Top Content Region',
+        description: 'Content width region below sort/filter, above product grid',
+        maxComponents: 5,
+    },
+    {
+        id: 'searchBottom',
+        name: 'Bottom Region',
+        description: 'Region at the bottom of search results after product grid',
+        maxComponents: 5,
+    },
+])
+export class SearchPageMetadata {}
+
+export type SearchPageData = {
+    searchTerm: string;
+    searchResultCritical: ShopperSearch.schemas['ProductSearchResult'];
+    searchResultNonCritical: Promise<ShopperSearch.schemas['ProductSearchResult']>;
+    page: Awaited<ReturnType<typeof fetchPageWithComponentData>>;
+    pageUrl: string;
+    refine: string[];
+    currency: string;
+    locale: string;
+    initialFiltersOpen?: boolean;
+};
+
+/**
+ * Server-side loader function that fetches search results data.
+ * This function runs on the server during SSR and prepares data for the search page.
+ * @returns Object containing search results, refinements, and page metadata
+ */
+export async function loader(args: Route.LoaderArgs): Promise<SearchPageData> {
+    const { context, request } = args;
+    const requestUrl = new URL(request.url);
+    redirectToCanonicalPath(requestUrl);
+    const { searchParams } = requestUrl;
+    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const q = searchParams.get('q') ?? '';
+    const sort = searchParams.get('sort') ?? '';
+    const refine = searchParams.getAll('refine');
+    const initialFiltersOpen = getInitialFiltersOpen(searchParams);
+    const config = getConfig(context);
+    const logger = getLogger(context);
+
+    const siteCtx = context.get(siteContext);
+    if (!siteCtx) {
+        logger.error('Search: site context is not available');
+        throw new Response('Site context is not available', { status: 500 });
+    }
+    const { currency } = siteCtx;
+    const locale = siteCtx.locale.id;
+
+    const limit = config.search.products.hits.limit;
+
+    // Ensure criticalCount doesn't exceed limit to prevent negative non-critical limit
+    const criticalCount = config.search.products.hits.critical ?? 2;
+    const safeCriticalCount = Math.min(criticalCount, limit);
+
+    logger.debug('Search: loader starting', { q, offset, sort, refineCount: refine.length });
+    const searchResultCriticalPromise = fetchSearchProducts(context, {
+        q,
+        limit: safeCriticalCount,
+        offset,
+        sort,
+        refine,
+        currency,
+    });
+    const pagePromise = fetchPageWithComponentData(args, {
+        pageId: 'search',
+    });
+
+    // Observe both concurrent requests immediately so a failure in either request cannot leave the
+    // other rejection unhandled. Awaiting the original promises still propagates their errors.
+    void Promise.allSettled([searchResultCriticalPromise, pagePromise]);
+
+    const searchResultCritical = await searchResultCriticalPromise;
+    logger.info('Search: results loaded', { query: q, total: searchResultCritical.total, offset });
+
+    const pageUrl = buildSeoPageUrl(context, requestUrl);
+    const effectiveCriticalCount = searchResultCritical.hits?.length ?? 0;
+
+    const searchResultNonCritical = fetchSearchProducts(context, {
+        q,
+        limit: limit - effectiveCriticalCount,
+        offset: offset + effectiveCriticalCount,
+        sort,
+        refine,
+        currency,
+    });
+
+    // Observe immediately, same as searchResultCriticalPromise/pagePromise above: this promise is
+    // created after that guard runs, so without its own observer a slow/timed-out SCAPI response
+    // here can still be unhandled when entry.server.tsx's stream timeout force-rejects it.
+    //
+    // The footwear PDP's recommendation rails (pdp-recommendations.server.ts) guard the same
+    // stream-timeout crash differently, by racing the promise to a local timeout instead of
+    // observing it, because that path is fine degrading to an empty rail on timeout.
+    void Promise.allSettled([searchResultNonCritical]);
+
+    return {
+        searchTerm: q,
+        searchResultCritical,
+        searchResultNonCritical,
+        page: await pagePromise,
+        pageUrl,
+        refine,
+        currency,
+        locale,
+        initialFiltersOpen,
+    };
+}
+
+export { shouldRevalidate } from '@/lib/revalidation/routes/category';
+
+function ProductGridError() {
+    const rawError = useAsyncError();
+    const error = rawError instanceof NormalizedApiError ? rawError : null;
+    const { t } = useTranslation('common');
+    return (
+        <div role="alert" className="col-span-full py-8 text-center text-muted-foreground">
+            <p>{t('productGrid.loadFailed')}</p>
+            {import.meta.env.DEV && error && (
+                <div className="mt-2 text-xs font-mono text-muted-foreground/70">
+                    {error.status && <span>{error.status} </span>}
+                    {error.message && <p>{error.message}</p>}
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default function SearchPage({
+    loaderData: {
+        searchTerm,
+        searchResultCritical,
+        searchResultNonCritical,
+        page,
+        pageUrl,
+        refine,
+        currency,
+        locale,
+        initialFiltersOpen,
+    },
+}: {
+    loaderData: SearchPageData;
+}) {
+    const { t } = useTranslation('search');
+    const config = useConfig();
+    const { site } = useSite();
+    const limit = config.search.products.hits.limit;
+
+    const [filtersOpen, toggleFiltersOpen] = useFiltersPanelState(initialFiltersOpen);
+
+    // Determine the maximum number of skeletons to display in the product grid.
+    // Out-of-the-box the idea is to not display more than 8 skeletons, i.e., two rows on a desktop device.
+    // Wrap in Math.max(0, ...) to prevent negative values when criticalCount is high(er).
+    const criticalCount = searchResultCritical.hits?.length ?? 0;
+    const nonCriticalCount = Math.max(
+        0,
+        Math.min(8, limit, searchResultCritical.total - searchResultCritical.offset) - criticalCount
+    );
+
+    const analytics = useAnalytics();
+    const lastTrackedSearchRef = useRef<string | null>(null);
+    const pendingSearchRef = useRef<string | null>(null);
+    const searchExecutionRef = useRef<{ criteria: string; searchResultId: string; started: boolean } | null>(null);
+
+    const location = useLocation();
+    const navigation = useNavigation();
+    const searchWithoutFiltersParam = useMemo(() => getSearchWithoutFiltersParam(location.search), [location.search]);
+    const pageIdentity = `${currency}-${locale}`;
+    const analyticsKey = `${site.id}-${pageIdentity}-${location.pathname}-${searchWithoutFiltersParam}-${location.hash}-${limit}`;
+    const productGridDataKey = `${pageIdentity}-${searchWithoutFiltersParam}`;
+    const searchCriteria = JSON.stringify([
+        searchTerm,
+        searchResultCritical.selectedSortingOption ?? '',
+        [...refine].sort(),
+        site.id,
+        locale,
+        currency,
+    ]);
+    const selectedFiltersCount = useMemo(
+        () => new URLSearchParams(location.search).getAll('refine').length,
+        [location.search]
+    );
+    const isProductGridLoading = useMemo(() => {
+        if (navigation.state === 'idle' || !navigation.location) {
+            return false;
+        }
+        const currentRefines = new URLSearchParams(location.search).getAll('refine');
+        const nextRefines = new URLSearchParams(navigation.location.search).getAll('refine');
+        return (
+            currentRefines.length !== nextRefines.length ||
+            currentRefines.some((currentRefine, index) => currentRefine !== nextRefines[index])
+        );
+    }, [location.search, navigation.location, navigation.state]);
+
+    const nonCriticalPromise = useMemo(() => {
+        const hitsPromise = searchResultNonCritical.then((r) => r.hits ?? []);
+        // Observe immediately: DeferredProductGrid never mounts <Await> during the SSR render
+        // pass (useDeferredRender's idle callback is a client-only useEffect), so this derived
+        // promise has no consumer yet when it's created here. Without this guard, a stream-timeout
+        // rejection on searchResultNonCritical propagates to this unobserved promise and crashes
+        // the server the same way the loader-level guard prevents for searchResultNonCritical itself.
+        void Promise.allSettled([hitsPromise]);
+        return hitsPromise;
+    }, [searchResultNonCritical]);
+
+    const [, startTransition] = useTransition();
+
+    const handleProductClick = useCallback(
+        (product: ShopperSearch.schemas['ProductSearchHit']) => {
+            if (analytics) {
+                void analytics.trackClickProductInSearch({
+                    searchInputText: searchTerm,
+                    product,
+                });
+            }
+        },
+        [analytics, searchTerm]
+    );
+
+    useEffect(() => {
+        if (analyticsKey !== lastTrackedSearchRef.current && analyticsKey !== pendingSearchRef.current) {
+            pendingSearchRef.current = analyticsKey;
+            let active = true;
+            if (searchExecutionRef.current?.criteria !== searchCriteria) {
+                searchExecutionRef.current = {
+                    criteria: searchCriteria,
+                    searchResultId: crypto.randomUUID(),
+                    started: false,
+                };
+            }
+            const searchResultId = searchExecutionRef.current.searchResultId;
+
+            startTransition(() => {
+                void nonCriticalPromise
+                    .then((searchHitsData: ShopperSearch.schemas['ProductSearchHit'][]) => {
+                        if (!active || pendingSearchRef.current !== analyticsKey) return;
+                        const startsSearchExecution = !searchExecutionRef.current?.started;
+                        if (searchExecutionRef.current) {
+                            searchExecutionRef.current.started = true;
+                        }
+                        pendingSearchRef.current = null;
+                        lastTrackedSearchRef.current = analyticsKey;
+
+                        void analytics.trackViewSearch({
+                            searchResultId,
+                            startsSearchExecution,
+                            searchInputText: searchTerm,
+                            searchResults: [...(searchResultCritical.hits ?? []), ...searchHitsData],
+                            sort:
+                                searchResultCritical.selectedSortingOption ||
+                                searchResultCritical.sortingOptions?.[0]?.label ||
+                                '',
+                            refinements: searchResultCritical.selectedRefinements ?? {},
+                            offset: searchResultCritical.offset,
+                            limit,
+                            total: searchResultCritical.total,
+                        });
+                    })
+                    .catch(() => {
+                        if (pendingSearchRef.current === analyticsKey) {
+                            pendingSearchRef.current = null;
+                        }
+                    });
+            });
+
+            return () => {
+                active = false;
+                if (pendingSearchRef.current === analyticsKey) {
+                    pendingSearchRef.current = null;
+                }
+            };
+        }
+        // oxlint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchTerm, searchCriteria, analyticsKey, nonCriticalPromise]);
+
+    return (
+        <>
+            <SeoMeta
+                title={
+                    searchTerm
+                        ? t('titleWithQuery', { query: searchTerm, defaultValue: `Results for "${searchTerm}"` })
+                        : t('title', { defaultValue: 'Search' })
+                }
+                description={
+                    searchTerm
+                        ? t('meta.descriptionWithQuery', {
+                              query: searchTerm,
+                              count: searchResultCritical.total,
+                              defaultValue: `${searchResultCritical.total} results for "${searchTerm}"`,
+                          })
+                        : t('meta.description', { defaultValue: 'Search our store for products' })
+                }
+                openGraph={{ type: 'website', url: pageUrl }}
+            />
+            <div className="pb-16">
+                <div className="section-container">
+                    <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <p>{t('results')}</p>
+                            <h1 className="text-3xl font-bold leading-none tracking-[-0.75px] text-card-foreground">
+                                {searchTerm} ({searchResultCritical.total})
+                            </h1>
+                        </div>
+                        {searchResultCritical?.sortingOptions && searchResultCritical.sortingOptions.length > 0 && (
+                            <div className="flex-shrink-0">
+                                <CategorySorting result={searchResultCritical} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* searchTopFullWidth */}
+                    <Region className="mb-8" page={page} regionId="searchTopFullWidth" critical={true} />
+
+                    <div className="flex flex-col lg:flex-row gap-8">
+                        {/* Filters toggle button - mobile only (above panel) */}
+                        <div className="lg:hidden">
+                            <FiltersButton
+                                onClick={toggleFiltersOpen}
+                                isActive={filtersOpen}
+                                selectedFiltersCount={selectedFiltersCount}
+                            />
+                        </div>
+
+                        {/* Category Refinements - toggles visibility on left side */}
+                        {filtersOpen && (
+                            <div className="w-full lg:w-64 lg:flex-shrink-0">
+                                <CategoryRefinements result={searchResultCritical} refine={refine} />
+                            </div>
+                        )}
+
+                        <div className="flex-grow">
+                            {/* Filters toggle button - desktop only (inside content area) */}
+                            <div className="mb-4 hidden lg:block">
+                                <FiltersButton
+                                    onClick={toggleFiltersOpen}
+                                    isActive={filtersOpen}
+                                    selectedFiltersCount={selectedFiltersCount}
+                                />
+                            </div>
+
+                            <ActiveFilters result={searchResultCritical} />
+
+                            {/* searchTopContent */}
+                            <Region className="mb-8" page={page} regionId="searchTopContent" />
+
+                            <DeferredProductGrid
+                                key={productGridDataKey}
+                                critical={searchResultCritical.hits ?? []}
+                                nonCritical={nonCriticalPromise}
+                                nonCriticalCount={nonCriticalCount}
+                                hasRefinementsPanel={filtersOpen}
+                                isLoading={isProductGridLoading}
+                                handleProductClick={handleProductClick}
+                                errorElement={<ProductGridError />}
+                            />
+
+                            {searchResultCritical.total > 1 && (
+                                <div className="mt-10">
+                                    <CategoryPagination
+                                        limit={limit}
+                                        offset={searchResultCritical.offset}
+                                        total={searchResultCritical.total}
+                                    />
+                                </div>
+                            )}
+
+                            {/* searchBottom */}
+                            <Region className="mt-8" page={page} regionId="searchBottom" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+}

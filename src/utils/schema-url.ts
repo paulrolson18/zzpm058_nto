@@ -1,0 +1,207 @@
+/**
+ * Copyright 2026 Salesforce, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * Utility functions for constructing URLs in JSON-LD schemas.
+ * These functions ensure that schema URLs always use the public storefront domain
+ * and never expose internal routing URLs (AWS Lambda, CDN origins, etc.).
+ */
+
+import {
+    extractPrefixParamValues,
+    resolvePrefix,
+    stripPathPrefix,
+} from '@salesforce/storefront-next-runtime/site-context';
+import { createCategoryUrl, createProductUrl, getSiteSeoRoutes, type SeoUrlContext } from '@/route-paths';
+
+function extractResolvedOuterPrefix(pathname: string, urlPrefix?: string): string {
+    if (!urlPrefix || urlPrefix === '/') return '';
+
+    const innerPath = stripPathPrefix({ pathname, prefix: urlPrefix });
+    if (innerPath === pathname) return '';
+
+    return resolvePrefix({
+        prefix: urlPrefix,
+        params: extractPrefixParamValues({ pathname, prefix: urlPrefix }),
+    });
+}
+
+/**
+ * Build a complete public URL for use in JSON-LD schema.
+ * This ensures schema URLs always use the public storefront domain and preserve
+ * site/locale prefixes from the current page URL.
+ *
+ * @param options - URL building options
+ * @param options.origin - Public origin (scheme + host), e.g. the origin of the loader's canonical page URL
+ * @param options.currentPageUrl - Current page URL (used to extract site/locale prefix)
+ * @param options.path - Path to build (e.g., '/p/123', '/c/456')
+ * @param options.seoUrlContext - Active site's optional SEO route configuration
+ * @returns Complete absolute URL for schema, or undefined if inputs are invalid
+ *
+ * @example
+ * ```ts
+ * // From category page: /global/en-GB/c/womens
+ * // Build product URL: /global/en-GB/p/123
+ * const productUrl = buildSchemaUrl({
+ *   origin: 'https://example.com',
+ *   currentPageUrl: 'https://example.com/global/en-GB/c/womens',
+ *   path: '/p/123'
+ * });
+ * // Result: 'https://example.com/global/en-GB/p/123'
+ * ```
+ */
+export function buildSchemaUrl({
+    origin,
+    currentPageUrl,
+    path,
+    seoUrlContext,
+}: {
+    origin: string;
+    currentPageUrl: string;
+    path: string;
+    seoUrlContext?: SeoUrlContext;
+}): string | undefined {
+    if (!origin || !path) return undefined;
+
+    try {
+        const pageUrl = new URL(currentPageUrl);
+
+        // Extract the prefix (site/locale path segments) before the page type segment
+        // Examples:
+        // - /global/en-GB/c/123 -> prefix is /global/en-GB
+        // - /en-US/p/456 -> prefix is /en-US
+        // - /c/789 -> prefix is empty
+        let prefix = extractResolvedOuterPrefix(pageUrl.pathname, seoUrlContext?.urlPrefix);
+
+        // Preserve the legacy inference for direct utility callers that do not have URL configuration.
+        if (!seoUrlContext?.urlPrefix) {
+            const siteSeoRoutes = getSiteSeoRoutes(seoUrlContext);
+            const pageTypeSegments = siteSeoRoutes
+                ? [`/${siteSeoRoutes.category.prefix}/`, `/${siteSeoRoutes.product.prefix}/`, '/search']
+                : ['/c/', '/p/', '/search'];
+
+            for (const segment of pageTypeSegments) {
+                const segmentIndex = pageUrl.pathname.indexOf(segment);
+                if (segmentIndex >= 0) {
+                    prefix = pageUrl.pathname.slice(0, segmentIndex);
+                    break;
+                }
+            }
+        }
+
+        // Ensure path starts with /
+        const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+        return `${origin}${prefix}${normalizedPath}`;
+    } catch {
+        // If URL parsing fails, return a basic concatenation
+        const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+        return `${origin}${normalizedPath}`;
+    }
+}
+
+/**
+ * Build a product URL for JSON-LD schema.
+ * Always constructs URLs based on the storefront domain, never using explicit URLs
+ * from API responses which may contain internal routing URLs.
+ *
+ * @param options - Product URL building options
+ * @param options.productId - Product ID
+ * @param options.slug - Product slug returned by SCAPI `expand=slug`
+ * @param options.origin - Public origin (scheme + host), e.g. the origin of the loader's canonical page URL
+ * @param options.currentPageUrl - Current page URL (to preserve site/locale prefix)
+ * @param options.seoUrlContext - Active site's optional SEO route configuration
+ * @returns Complete product URL for schema, or undefined if productId is missing
+ *
+ * @example
+ * ```ts
+ * const productUrl = buildProductSchemaUrl({
+ *   productId: '12345',
+ *   origin: 'https://example.com',
+ *   currentPageUrl: 'https://example.com/global/en-GB/c/womens'
+ * });
+ * // Result: 'https://example.com/global/en-GB/p/12345'
+ * ```
+ */
+export function buildProductSchemaUrl({
+    productId,
+    slug,
+    origin,
+    currentPageUrl,
+    seoUrlContext,
+}: {
+    productId?: string;
+    slug?: string;
+    origin: string;
+    currentPageUrl: string;
+    seoUrlContext?: SeoUrlContext;
+}): string | undefined {
+    if (!productId) return undefined;
+
+    return buildSchemaUrl({
+        origin,
+        currentPageUrl,
+        path: createProductUrl({ productId, slug }, seoUrlContext),
+        seoUrlContext,
+    });
+}
+
+/**
+ * Build a category URL for JSON-LD schema.
+ *
+ * @param options - Category URL building options
+ * @param options.categoryId - Category ID
+ * @param options.slugSegments - Authoritative category slug hierarchy, when available
+ * @param options.origin - Public origin (scheme + host), e.g. the origin of the loader's canonical page URL
+ * @param options.currentPageUrl - Current page URL (to preserve site/locale prefix)
+ * @param options.seoUrlContext - Active site's optional SEO route configuration
+ * @returns Complete category URL for schema, or undefined if categoryId is missing
+ *
+ * @example
+ * ```ts
+ * const categoryUrl = buildCategorySchemaUrl({
+ *   categoryId: 'womens-clothing',
+ *   origin: 'https://example.com',
+ *   currentPageUrl: 'https://example.com/global/en-GB/c/womens'
+ * });
+ * // Result: 'https://example.com/global/en-GB/c/womens-clothing'
+ * ```
+ */
+export function buildCategorySchemaUrl({
+    categoryId,
+    slugSegments,
+    origin,
+    currentPageUrl,
+    seoUrlContext,
+}: {
+    categoryId?: string;
+    slugSegments?: readonly string[];
+    origin: string;
+    currentPageUrl: string;
+    seoUrlContext?: SeoUrlContext;
+}): string | undefined {
+    if (!categoryId) return undefined;
+
+    const categoryConfig = getSiteSeoRoutes(seoUrlContext)?.category;
+    if (categoryConfig?.mode === 'slug-path' && !slugSegments?.length) return undefined;
+
+    return buildSchemaUrl({
+        origin,
+        currentPageUrl,
+        path: createCategoryUrl({ categoryId, slugSegments: slugSegments ?? [] }, seoUrlContext),
+        seoUrlContext,
+    });
+}

@@ -1,0 +1,384 @@
+/**
+ * Copyright 2026 Salesforce, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import {
+    Component,
+    type ErrorInfo,
+    type ReactElement,
+    type ReactNode,
+    Suspense,
+    lazy,
+    startTransition,
+    useEffect,
+    useState,
+} from 'react';
+import type { ShopperProducts } from '@/scapi';
+import { createLogger, serializeError } from '@/lib/logger';
+import { Button } from '@/components/ui/button';
+import ProductQuantityPicker from '@/components/product-quantity-picker';
+import { useProductView } from '@/providers/product-view';
+import { isProductSet, isProductBundle } from '@/lib/product/product-utils';
+import { addToCartWithAddons, type AdditionalItem } from '@/lib/product/add-to-cart-with-addons';
+import { useCheckAndExecutePendingAction } from '@/hooks/check-and-execute-pending-action';
+import { useTranslation } from 'react-i18next';
+import { UITarget } from '@/targets/ui-target';
+
+/** @feature-stub Express checkout buttons — remove this import and its JSX below to strip the stub */
+const ExpressPayments = lazy(() => import('@/components/checkout/components/express-payments'));
+const ConnectedInlineAddToCart = lazy(() => import('@/components/inline-add-to-cart/connected'));
+
+interface InlineCartControllerErrorBoundaryProps {
+    children: ReactNode;
+    fallback: ReactNode;
+}
+
+interface InlineCartControllerErrorBoundaryState {
+    hasError: boolean;
+}
+
+const logger = createLogger({ component: 'ProductCartActions' });
+
+/**
+ * Keeps the PDP purchase path available when the asynchronously loaded inline
+ * cart controller cannot render, such as after a stale client asset is cached.
+ */
+class InlineCartControllerErrorBoundary extends Component<
+    InlineCartControllerErrorBoundaryProps,
+    InlineCartControllerErrorBoundaryState
+> {
+    state: InlineCartControllerErrorBoundaryState = { hasError: false };
+
+    static getDerivedStateFromError(): InlineCartControllerErrorBoundaryState {
+        return { hasError: true };
+    }
+
+    componentDidCatch(error: unknown, errorInfo: ErrorInfo): void {
+        // Log before silently falling back so this failure is diagnosable rather than invisible.
+        logger.error('Inline cart controller failed to render; falling back to Add to Cart', {
+            ...serializeError(error),
+            componentStack: errorInfo.componentStack,
+        });
+    }
+
+    render(): ReactNode {
+        return this.state.hasError ? this.props.fallback : this.props.children;
+    }
+}
+
+// `AdditionalItem` and the add-with-add-ons batching live in @/lib/product/add-to-cart-with-addons so
+// this component and the furniture ProductBottomBar share one implementation. Re-exported here for the
+// existing consumers that import it from this module.
+export type { AdditionalItem };
+
+interface ProductCartActionsProps {
+    product: ShopperProducts.schemas['Product'];
+    /** Called immediately before cart action starts (add or update) - useful for optimistic UI like closing modal */
+    onBeforeCartAction?: () => void;
+    /** Called after successful cart operation completes (add or update) */
+    onCartSuccess?: () => void;
+    /** Called if cart operation fails (add or update) */
+    onCartError?: (error: unknown) => void;
+    /** Called immediately before add to wishlist action starts */
+    onBeforeAddToWishlist?: () => void;
+    /** Called after successful add to wishlist action completes */
+    onAddToWishlistSuccess?: () => void;
+    /** Called if add to wishlist operation fails */
+    onAddToWishlistError?: (error: unknown) => void;
+    /**
+     * When provided in add mode, renders a compact two-button layout:
+     * "Add to Cart" + "Buy It Now" side by side. Express payments, BNPL,
+     * wishlist, and share buttons are hidden in this layout.
+     * Typically navigates to the PDP for the full purchase flow.
+     */
+    onBuyNow?: () => void;
+    /**
+     * Additional items to batch with the main product on Add-to-Cart (e.g. service add-ons).
+     * Generic prop with no domain-specific knowledge.
+     */
+    additionalItems?: AdditionalItem[];
+    /**
+     * Render the quantity picker inline, in one row to the left of the Add-to-Cart button (default
+     * false → button only). Pair with `ProductInfo` `showQuantityPicker={false}` so quantity isn't
+     * rendered twice. Standard (non-compact, non-set/bundle) add-mode layout only.
+     */
+    showInlineQuantity?: boolean;
+    /**
+     * Replaces the PDP Add-to-Cart CTA with an in-cart quantity stepper after
+     * the first successful add. Only use for a standard PDP add flow.
+     */
+    showInlineCartQuantity?: boolean;
+}
+
+export default function ProductCartActions({
+    product,
+    onBeforeCartAction,
+    onCartSuccess,
+    onCartError,
+    onBeforeAddToWishlist,
+    onAddToWishlistSuccess,
+    onAddToWishlistError,
+    onBuyNow,
+    additionalItems = [],
+    showInlineQuantity = false,
+    showInlineCartQuantity = false,
+}: ProductCartActionsProps): ReactElement {
+    const { t } = useTranslation('product');
+    const isProductASet = isProductSet(product);
+    const isProductABundle = isProductBundle(product);
+
+    // Get shared state from context. currentVariant comes from the SAME source
+    // that derives canAddToCart (the provider's controlled/URL variant) so the
+    // "select all options" message and the Add-to-Cart enabled state can never
+    // disagree — e.g. in the Quick Add modal where the variant is passed in as
+    // controlled state and a local useCurrentVariant({ product }) would miss it.
+    const {
+        mode,
+        isAddingToOrUpdatingCart,
+        canAddToCart,
+        isVariantInventoryLoading,
+        currentVariant,
+        isMasterOrVariantProduct,
+        quantity,
+        setQuantity,
+        maxQuantity,
+        stockLevel,
+        isOutOfStock,
+        handleAddToCart,
+        handleProductSetAddToCart,
+        handleUpdateCart,
+        handleAddToWishlist,
+        fulfillmentSelection,
+    } = useProductView();
+
+    const isEditMode = mode === 'edit';
+    // Compact layout: shown in add mode when a "Buy It Now" handler is provided (e.g. Quick Add modal).
+    // Hides express payments, BNPL, wishlist, and share — shopper goes to PDP for those.
+    const isCompactAddMode = !isEditMode && !!onBuyNow;
+    const canUseInlineCartQuantity =
+        showInlineCartQuantity && !isCompactAddMode && !isEditMode && !isProductASet && !isProductABundle;
+
+    // Get product ID for pending action matching
+    const productToCheck = isMasterOrVariantProduct ? currentVariant : product;
+    const currentProductId =
+        productToCheck && 'productId' in productToCheck && typeof productToCheck.productId === 'string'
+            ? productToCheck.productId
+            : product.id;
+    const selectedPickupStoreId =
+        fulfillmentSelection?.optionId === 'pickup' && typeof fulfillmentSelection.metadata?.storeId === 'string'
+            ? fulfillmentSelection.metadata.storeId
+            : undefined;
+    // Check for pending actions and execute if they match this product
+    // This handles actions that were initiated before authentication (e.g., addToWishlist)
+    useCheckAndExecutePendingAction({
+        actionName: 'addToWishlist',
+        shouldExecute: (params) => params.productId === currentProductId,
+        onMatch: async () => {
+            const productToAdd = isMasterOrVariantProduct ? currentVariant : product;
+            // Call before callback
+            onBeforeAddToWishlist?.();
+            try {
+                await handleAddToWishlist(productToAdd as ShopperProducts.schemas['Variant']);
+                // Call success callback after API completes
+                onAddToWishlistSuccess?.();
+            } catch (error) {
+                onAddToWishlistError?.(error);
+                throw error;
+            }
+        },
+    });
+
+    const onAddOrUpdateToCart = async () => {
+        // Keep edit-mode optimistic close behavior, but for add-mode quick-add we
+        // wait for success so the mounted hook can emit toast + open mini-cart.
+        if (isEditMode) {
+            onBeforeCartAction?.();
+        }
+
+        try {
+            // Use handleUpdateCart in edit mode; in add mode, batch any selected add-ons via the shared helper.
+            if (isEditMode) {
+                await handleUpdateCart();
+            } else {
+                await addToCartWithAddons({
+                    product,
+                    currentVariant,
+                    quantity,
+                    additionalItems,
+                    handleAddToCart,
+                    handleProductSetAddToCart,
+                });
+            }
+            // Call success callback after API completes
+            onCartSuccess?.();
+        } catch (error) {
+            onCartError?.(error);
+        }
+    };
+
+    // Defer ExpressPayments loading until after initial render to improve Lighthouse performance
+    const [shouldLoadExpressPayments, setShouldLoadExpressPayments] = useState(false);
+
+    useEffect(() => {
+        // Use startTransition to mark this as non-urgent, allowing initial render to complete first
+        startTransition(() => {
+            setShouldLoadExpressPayments(true);
+        });
+    }, []);
+
+    // Shared between the error boundary and Suspense fallbacks below so the static Add-to-Cart
+    // button markup ships once, not twice, in the bundle.
+    const inlineAddToCartFallbackButton = (
+        <Button
+            data-testid="add-to-cart"
+            data-slot="add-to-cart-button"
+            onClick={() => void onAddOrUpdateToCart()}
+            disabled={!canAddToCart || isAddingToOrUpdatingCart || isVariantInventoryLoading}
+            className="w-full text-base font-semibold leading-6"
+            size="lg">
+            {isAddingToOrUpdatingCart ? t('addingToCart') : t('addToCart')}
+        </Button>
+    );
+
+    return (
+        <div className="mt-6">
+            {/* Options Selection Message. role="status" lives on a persistent container so the
+                prompt is announced when it appears/clears as the shopper selects variant options. */}
+            <div role="status" aria-atomic="true">
+                {isMasterOrVariantProduct && !currentVariant && !isProductASet && !isProductABundle && (
+                    <span className="text-destructive font-medium">{t('selectAllOptions')}</span>
+                )}
+            </div>
+            <UITarget targetId="sfcc.pdp.tax.productMessage" />
+
+            {/* Action Buttons */}
+            <div className="flex flex-col gap-3">
+                {/* Compact layout (Quick Add modal): Add to Cart + Buy It Now side by side */}
+                {isCompactAddMode && !isProductASet && !isProductABundle && (
+                    <div className="grid grid-cols-2 gap-3">
+                        <Button
+                            onClick={() => void onAddOrUpdateToCart()}
+                            disabled={!canAddToCart || isAddingToOrUpdatingCart || isVariantInventoryLoading}
+                            className="w-full"
+                            size="lg">
+                            {isAddingToOrUpdatingCart ? t('addingToCart') : t('addToCart')}
+                        </Button>
+                        <UITarget targetId="sfcc.quickAdd.payments.expressCheckout">
+                            <Button
+                                onClick={onBuyNow}
+                                disabled={!canAddToCart || isVariantInventoryLoading}
+                                variant="outline"
+                                className="w-full"
+                                size="lg">
+                                {t('buyItNow')}
+                            </Button>
+                        </UITarget>
+                    </div>
+                )}
+
+                {/* Standard layout: single Add to Cart / Update button, or (opt-in) quantity + ATC in one row */}
+                {!isCompactAddMode &&
+                    !isProductASet &&
+                    !isProductABundle &&
+                    (canUseInlineCartQuantity ? (
+                        <InlineCartControllerErrorBoundary
+                            fallback={
+                                <div className="flex flex-col gap-2" data-slot="inline-add-to-cart">
+                                    {inlineAddToCartFallbackButton}
+                                </div>
+                            }>
+                            <Suspense
+                                fallback={
+                                    <div
+                                        aria-busy="true"
+                                        className="flex flex-col gap-2"
+                                        data-slot="inline-add-to-cart">
+                                        {inlineAddToCartFallbackButton}
+                                        <div role="status" aria-live="polite" aria-atomic="true" />
+                                    </div>
+                                }>
+                                <ConnectedInlineAddToCart
+                                    productId={currentProductId}
+                                    storeId={selectedPickupStoreId}
+                                    stockLevel={stockLevel}
+                                    maxQuantity={maxQuantity}
+                                    onAdd={() => void onAddOrUpdateToCart()}
+                                    disabled={!canAddToCart || isAddingToOrUpdatingCart || isVariantInventoryLoading}
+                                    loading={isAddingToOrUpdatingCart || isVariantInventoryLoading}
+                                    productName={product.name}
+                                />
+                            </Suspense>
+                        </InlineCartControllerErrorBoundary>
+                    ) : showInlineQuantity && !isEditMode ? (
+                        <div className="flex items-stretch gap-3" data-slot="qty-add-row">
+                            <ProductQuantityPicker
+                                value={quantity.toString()}
+                                onChange={setQuantity}
+                                stockLevel={stockLevel}
+                                isOutOfStock={isOutOfStock}
+                                productName={product.name}
+                                maxQuantity={maxQuantity}
+                                hideLabel
+                                className="shrink-0 self-stretch"
+                            />
+                            <Button
+                                data-testid="add-to-cart"
+                                data-slot="add-to-cart-button"
+                                onClick={() => void onAddOrUpdateToCart()}
+                                disabled={!canAddToCart || isAddingToOrUpdatingCart || isVariantInventoryLoading}
+                                className="min-w-0 flex-1 text-base font-semibold leading-6"
+                                size="lg">
+                                {isAddingToOrUpdatingCart ? t('addingToCart') : t('addToCart')}
+                            </Button>
+                        </div>
+                    ) : (
+                        <Button
+                            data-testid="add-to-cart"
+                            data-slot="add-to-cart-button"
+                            onClick={() => void onAddOrUpdateToCart()}
+                            disabled={!canAddToCart || isAddingToOrUpdatingCart || isVariantInventoryLoading}
+                            className="w-full text-base font-semibold leading-6"
+                            size="lg">
+                            {isEditMode
+                                ? t('updateCart')
+                                : isAddingToOrUpdatingCart
+                                  ? t('addingToCart')
+                                  : t('addToCart')}
+                        </Button>
+                    ))}
+
+                {/* Express Payments — standard layout only, vertical for PDP */}
+                {!isCompactAddMode &&
+                    !isProductASet &&
+                    !isProductABundle &&
+                    !isEditMode &&
+                    shouldLoadExpressPayments && (
+                        <UITarget targetId="sfcc.pdp.payments.expressCheckout">
+                            <Suspense fallback={null}>
+                                <ExpressPayments
+                                    layout="vertical"
+                                    separatorPosition="top"
+                                    separatorText={t('expressPayments.separatorBuyWith')}
+                                    disabled={!canAddToCart || isVariantInventoryLoading}
+                                />
+                            </Suspense>
+                        </UITarget>
+                    )}
+
+                <UITarget targetId="sfcc.pdp.after.addToCart" />
+                {!isCompactAddMode && !isEditMode && currentProductId && <UITarget targetId="sfcc.pdp.bnpl.message" />}
+            </div>
+        </div>
+    );
+}
