@@ -1,0 +1,97 @@
+/**
+ * Copyright 2026 Salesforce, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import { cn } from '@/lib/utils';
+import { ChatCharacter } from './chat-character';
+import { ChatHeader } from './chat-header';
+import { ChatInput } from './chat-input';
+import { ChatMessages } from './chat-messages';
+import type { ChatMessage } from './use-runway-chat';
+
+interface ChatPanelProps {
+  isOpen: boolean;
+  onClose: () => void;
+  agentName: string;
+  agentSubtitle: string;
+  scrt2Url: string;
+  tokenEndpoint: string;
+  isVoiceMode: boolean;
+  onStartVoiceMode: () => void;
+  onStopVoiceMode: () => void;
+  messages: ChatMessage[];
+  onSendMessage: (text: string) => void;
+  onClearChat: () => void;
+  onAgentMessage?: (text: string) => void;
+  characterVideoSrc?: string;
+}
+
+export function ChatPanel({
+  isOpen,
+  onClose,
+  agentName,
+  agentSubtitle,
+  scrt2Url,
+  tokenEndpoint,
+  isVoiceMode,
+  onStartVoiceMode,
+  onStopVoiceMode,
+  messages,
+  onSendMessage,
+  onClearChat,
+  onAgentMessage,
+  characterVideoSrc,
+}: ChatPanelProps) {
+  return (
+    <div
+      role="dialog"
+      aria-label={`Chat with ${agentName}`}
+      aria-modal="false"
+      className={cn(
+        'fixed inset-y-0 right-0 z-[9998] flex w-[380px] max-w-full flex-col border-l border-border bg-background shadow-xl',
+        'transition-transform duration-300 ease-in-out',
+        isOpen ? 'translate-x-0' : 'translate-x-full',
+      )}
+    >
+      {/* Shared wrapper: header + character section share the same horizontal padding so they align */}
+      <div className="shrink-0 px-4">
+        <ChatHeader
+          agentName={agentName}
+          agentSubtitle={agentSubtitle}
+          onClose={onClose}
+          onClearChat={onClearChat}
+          className="px-0"
+        />
+        <ChatCharacter
+          scrt2Url={scrt2Url}
+          tokenEndpoint={tokenEndpoint}
+          isVoiceMode={isVoiceMode}
+          onStartVoiceMode={onStartVoiceMode}
+          onStopVoiceMode={onStopVoiceMode}
+          onAgentMessage={onAgentMessage}
+          characterVideoSrc={characterVideoSrc}
+          agentName={agentName}
+        />
+      </div>
+
+      <ChatMessages messages={messages} />
+
+      <ChatInput
+        onSendMessage={onSendMessage}
+        onStartVoiceMode={onStartVoiceMode}
+      />
+    </div>
+  );
+}

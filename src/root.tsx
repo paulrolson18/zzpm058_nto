@@ -103,7 +103,8 @@ import { correlationContext } from '@/lib/correlation';
 import { AppToaster } from '@/components/toast';
 import { TrackingConsentBanner } from '@/components/tracking-consent-banner';
 import CimulateAgent, { isCimulateEnabled, resolveShopperAgentConfig } from '@/components/cimulate';
-import RunwayAgent, { isRunwayEnabled } from '@/components/runway';
+import { isRunwayEnabled } from '@/components/runway';
+import RunwayChatWidget from '@/components/runway-chat';
 
 // Hooks
 import { useExecutePendingAction } from '@/hooks/use-execute-pending-action';
@@ -809,14 +810,17 @@ export default function App({
     return (
         <ComposeProviders providers={providers}>
             {passkeyEnabled ? <PasskeyRegistrationProvider>{innerTree}</PasskeyRegistrationProvider> : innerTree}
-            {shopperAgentEnabled && !shopperAgentDisabledByRoute && (
-                <CimulateAgent cimulateConfiguration={shopperAgent} />
-            )}
-            {shopperAgentEnabled && shopperAgentDisabledByRoute && (
-                <style>{'.commerce-client-shopper-agent{display:none !important;}'}</style>
-            )}
-            {runwayEnabled && shopperAgentEnabled && !shopperAgentDisabledByRoute && runwayConfig && shopperAgent?.scrt2Url && (
-                <RunwayAgent config={runwayConfig} scrt2Url={shopperAgent.scrt2Url} />
+            {runwayEnabled && shopperAgentEnabled && !shopperAgentDisabledByRoute && runwayConfig && shopperAgent?.scrt2Url ? (
+                <RunwayChatWidget config={runwayConfig} scrt2Url={shopperAgent.scrt2Url} characterVideoSrc="/videos/nto-agent-video.mp4" />
+            ) : (
+                <>
+                    {shopperAgentEnabled && !shopperAgentDisabledByRoute && (
+                        <CimulateAgent cimulateConfiguration={shopperAgent} />
+                    )}
+                    {shopperAgentEnabled && shopperAgentDisabledByRoute && (
+                        <style>{'.commerce-client-shopper-agent{display:none !important;}'}</style>
+                    )}
+                </>
             )}
         </ComposeProviders>
     );

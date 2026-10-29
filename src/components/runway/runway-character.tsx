@@ -27,6 +27,8 @@ interface RunwayCharacterProps {
   toggleSpeaker: () => void;
   videoTrack?: TrackReference;
   audioTrack?: TrackReference;
+  /** Override the outer container's positioning classes. Defaults to fixed top-left overlay. */
+  containerClassName?: string;
 }
 
 /**
@@ -43,13 +45,15 @@ export function RunwayCharacter({
   toggleSpeaker,
   videoTrack,
   audioTrack,
+  containerClassName,
 }: RunwayCharacterProps) {
   return (
     <>
       {audioTrack && <AudioTrack trackRef={audioTrack} aria-hidden />}
       <div
         className={cn(
-          'fixed left-4 top-20 z-50 flex flex-col items-center gap-2',
+          containerClassName ?? 'fixed left-4 top-20 z-50',
+          'flex flex-col items-center gap-2',
           !isVisible && 'hidden',
         )}
         aria-hidden={!isVisible}
