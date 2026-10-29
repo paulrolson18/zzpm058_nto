@@ -103,6 +103,7 @@ import { correlationContext } from '@/lib/correlation';
 import { AppToaster } from '@/components/toast';
 import { TrackingConsentBanner } from '@/components/tracking-consent-banner';
 import CimulateAgent, { isCimulateEnabled, resolveShopperAgentConfig } from '@/components/cimulate';
+import RunwayAgent, { isRunwayEnabled } from '@/components/runway';
 
 // Hooks
 import { useExecutePendingAction } from '@/hooks/use-execute-pending-action';
@@ -768,6 +769,8 @@ export default function App({
 
     const shopperAgent = resolveShopperAgentConfig(appConfig);
     const shopperAgentEnabled = isCimulateEnabled(shopperAgent?.enabled);
+    const runwayConfig = appConfig?.runwayAgent;
+    const runwayEnabled = isRunwayEnabled(runwayConfig?.enabled);
     const { pathname } = useLocation();
     const shopperAgentDisabledByRoute = useMemo(() => {
         const patterns = shopperAgent?.disabledPathPatterns;
@@ -811,6 +814,9 @@ export default function App({
             )}
             {shopperAgentEnabled && shopperAgentDisabledByRoute && (
                 <style>{'.commerce-client-shopper-agent{display:none !important;}'}</style>
+            )}
+            {runwayEnabled && shopperAgentEnabled && !shopperAgentDisabledByRoute && runwayConfig && shopperAgent?.scrt2Url && (
+                <RunwayAgent config={runwayConfig} scrt2Url={shopperAgent.scrt2Url} />
             )}
         </ComposeProviders>
     );

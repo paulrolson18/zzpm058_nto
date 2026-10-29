@@ -19,6 +19,7 @@ import { getConfig } from '@salesforce/storefront-next-runtime/config';
 import { resolveShopperAgentConfig } from '@/components/cimulate';
 import { createCimulateCspContributor } from './csp-contributors/cimulate.js';
 import { createData360CspContributor } from './csp-contributors/data360.js';
+import { createLivekitCspContributor } from './csp-contributors/livekit.js';
 // Imported via the `@/` alias (not a sibling-relative path) so a brand can override this contributor:
 // the default is a no-op, and a brand that renders the boutique map ships its own always-active
 // version permitting the OSM tile origin. A relative import would pin the default and leave those
@@ -41,6 +42,7 @@ export const securityHeadersMiddleware: MiddlewareFunction<Response> = async (ar
             createCimulateCspContributor(resolveShopperAgentConfig(config)),
             createData360CspContributor(config.engagement?.adapters?.data360),
             createOpenStreetMapCspContributor(),
+            createLivekitCspContributor(config.runwayAgent),
         ];
         middleware = createSecurityHeadersMiddleware(config.security?.headers ?? {}, contributors);
     }

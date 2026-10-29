@@ -174,6 +174,17 @@ export type AppConfig = {
      * for backward compatibility; it is ignored when `commerce.shopperAgent` is set.
      */
     cimulateAgent?: ShopperAgentConfig;
+    /**
+     * Runway LiveAvatar + LiveKit voice agent integration.
+     * Override via `PUBLIC__app__runwayAgent` (single JSON string).
+     * Requires `commerce.shopperAgent` (or `cimulateAgent`) to also be enabled —
+     * voice transcripts are routed through Cimulate to SCRT2.
+     */
+    runwayAgent?: {
+        enabled: string | boolean;
+        /** Server route that issues LiveKit room tokens. Defaults to /api/runway-token. */
+        tokenEndpoint?: string;
+    };
     defaultSiteId: string;
     development: {
         enableDevtools: boolean;
