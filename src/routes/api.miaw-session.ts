@@ -57,7 +57,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
     // 1. Valid session with a live token — reuse as-is
     if (existing && isMiawSessionValid(existing)) {
-        return data({ conversationId: existing.conversationId });
+        return data({ conversationId: existing.conversationId, hasHistory: existing.messageSent });
     }
 
     // 2. Token expired or no session — create a fresh conversation
@@ -68,7 +68,7 @@ export async function action({ request, context }: Route.ActionArgs) {
         await createMiawConversation(scrt2Url, accessToken, conversationId, esDeveloperName);
         const session = { conversationId, accessToken, expiresAt, messageSent: false };
         const setCookie = await serializeMiawSession(session, context);
-        return data({ conversationId }, { headers: { 'Set-Cookie': setCookie } });
+        return data({ conversationId, hasHistory: false }, { headers: { 'Set-Cookie': setCookie } });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return data({ error: 'service' as const, message }, { status: 503 });

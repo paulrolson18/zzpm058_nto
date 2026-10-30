@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    AudioTrack,
     LiveKitRoom,
+    RoomAudioRenderer,
     useLocalParticipant,
     useRoomContext,
     useTracks,
@@ -32,21 +32,34 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger({ component: 'runway-chat' });
 
+const DEFAULT_VOICE_GREETING = "Hey! I'm Shopper, your NTO stylist. What are we looking for today?";
+
 interface PanelCharacterRoomProps {
     onExit: () => void;
     /** Called when the LiveKit agent sends a user speech transcript. */
     onUserTranscript?: (text: string) => void;
+    /** Called with a speak function on mount so the parent can trigger TTS; called with null on cleanup. */
+    onRegisterSpeak?: (fn: ((text: string) => void) | null) => void;
+    /** Greeting text spoken when the character first connects. Mic is locked until it finishes. */
+    voiceGreeting?: string;
 }
 
-function PanelCharacterRoom({ onExit, onUserTranscript }: PanelCharacterRoomProps) {
+function PanelCharacterRoom({
+    onExit,
+    onUserTranscript,
+    onRegisterSpeak,
+    voiceGreeting = DEFAULT_VOICE_GREETING,
+}: PanelCharacterRoomProps) {
     const [isAgentReady, setIsAgentReady] = useState(false);
+    const [isGreeting, setIsGreeting] = useState(true);
     const [isMicMuted, setIsMicMuted] = useState(false);
     const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
 
+    const isGreetingRef = useRef(true);
+    isGreetingRef.current = isGreeting;
+
     const videoTracks = useTracks([Track.Source.Camera], { onlySubscribed: true });
-    const audioTracks = useTracks([Track.Source.Microphone], { onlySubscribed: true });
     const videoTrack = videoTracks[0] as TrackReference | undefined;
-    const audioTrack = audioTracks[0] as TrackReference | undefined;
 
     const room = useRoomContext();
     const { localParticipant } = useLocalParticipant();
@@ -71,9 +84,12 @@ function PanelCharacterRoom({ onExit, onUserTranscript }: PanelCharacterRoomProp
                     logger.info('[runway-chat] agent_ready — showing character');
                     setIsAgentReady(true);
                 }
-                // User speech transcript from the LiveKit agent
                 if (parsed.type === 'user_transcript' && parsed.text) {
                     onUserTranscript?.(parsed.text);
+                }
+                if (parsed.type === 'speech_finished' && isGreetingRef.current) {
+                    setIsGreeting(false);
+                    sendJsonData({ type: 'voice_mode', enabled: true });
                 }
             } catch (e) {
                 logger.warn('[runway-chat] data parse error', { error: String(e) });
@@ -83,13 +99,21 @@ function PanelCharacterRoom({ onExit, onUserTranscript }: PanelCharacterRoomProp
         return () => {
             room.off(RoomEvent.DataReceived, handleData);
         };
-    }, [room, onUserTranscript]);
+    }, [room, onUserTranscript, sendJsonData]);
 
     useEffect(() => {
         if (isAgentReady) {
-            sendJsonData({ type: 'voice_mode', enabled: true });
+            sendJsonData({ type: 'agent_text', text: voiceGreeting });
         }
-    }, [isAgentReady, sendJsonData]);
+    }, [isAgentReady, sendJsonData, voiceGreeting]);
+
+    // Register the speak function so use-runway-chat can trigger TTS on agent replies
+    useEffect(() => {
+        onRegisterSpeak?.((text) => sendJsonData({ type: 'agent_text', text }));
+        return () => {
+            onRegisterSpeak?.(null);
+        };
+    }, [sendJsonData, onRegisterSpeak]);
 
     const toggleMic = useCallback(() => {
         setIsMicMuted((prev) => {
@@ -103,7 +127,8 @@ function PanelCharacterRoom({ onExit, onUserTranscript }: PanelCharacterRoomProp
 
     return (
         <div className="relative flex w-full flex-col">
-            {!isSpeakerMuted && audioTrack && <AudioTrack trackRef={audioTrack} aria-hidden />}
+            {/* RoomAudioRenderer handles all remote audio tracks and browser autoplay policy */}
+            <RoomAudioRenderer muted={isSpeakerMuted} />
 
             <div
                 className={cn('relative w-full overflow-hidden bg-black/100', !isAgentReady && 'hidden')}
@@ -130,15 +155,26 @@ function PanelCharacterRoom({ onExit, onUserTranscript }: PanelCharacterRoomProp
             <div className="flex justify-center gap-2 px-4 py-3">
                 <button
                     type="button"
-                    onClick={toggleMic}
-                    aria-label={isMicMuted ? 'Unmute microphone' : 'Mute microphone'}
+                    onClick={isGreeting ? undefined : toggleMic}
+                    disabled={isGreeting}
+                    aria-label={
+                        isGreeting ? 'Shopper is speaking…' : isMicMuted ? 'Unmute microphone' : 'Mute microphone'
+                    }
                     className={cn(
                         'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
-                        isMicMuted
-                            ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                        isGreeting
+                            ? 'cursor-not-allowed bg-muted text-muted-foreground/40'
+                            : isMicMuted
+                              ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                              : 'bg-muted text-muted-foreground hover:bg-muted/80'
                     )}>
-                    {isMicMuted ? <MicOff className="size-4" aria-hidden /> : <Mic className="size-4" aria-hidden />}
+                    {isGreeting ? (
+                        <span className="size-2 animate-pulse rounded-full bg-muted-foreground/40" aria-hidden />
+                    ) : isMicMuted ? (
+                        <MicOff className="size-4" aria-hidden />
+                    ) : (
+                        <Mic className="size-4" aria-hidden />
+                    )}
                 </button>
                 <button
                     type="button"
@@ -175,10 +211,14 @@ interface ChatCharacterProps {
     onStopVoiceMode: () => void;
     /** Called when the LiveKit agent provides a user speech transcript. */
     onUserTranscript?: (text: string) => void;
+    /** Called with a speak function on LiveKit connect; null on disconnect. */
+    onRegisterSpeak?: (fn: ((text: string) => void) | null) => void;
     characterVideoSrc?: string;
     agentName?: string;
     /** Disables the voice mode button while the chat session is initializing. */
     disabled?: boolean;
+    /** Greeting spoken when the character first connects. Mic is locked until greeting finishes. */
+    voiceGreeting?: string;
 }
 
 export function ChatCharacter({
@@ -187,9 +227,11 @@ export function ChatCharacter({
     onStartVoiceMode,
     onStopVoiceMode,
     onUserTranscript,
+    onRegisterSpeak,
     characterVideoSrc,
     agentName = 'NTO Agent',
     disabled = false,
+    voiceGreeting,
 }: ChatCharacterProps) {
     const { token, livekitUrl, isError } = useLivekitToken(tokenEndpoint, isVoiceMode);
 
@@ -255,7 +297,12 @@ export function ChatCharacter({
             connect={true}
             onDisconnected={onStopVoiceMode}
             style={{ display: 'contents' }}>
-            <PanelCharacterRoom onExit={onStopVoiceMode} onUserTranscript={onUserTranscript} />
+            <PanelCharacterRoom
+                onExit={onStopVoiceMode}
+                onUserTranscript={onUserTranscript}
+                onRegisterSpeak={onRegisterSpeak}
+                voiceGreeting={voiceGreeting}
+            />
         </LiveKitRoom>
     );
 }

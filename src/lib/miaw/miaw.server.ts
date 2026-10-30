@@ -143,6 +143,46 @@ export async function sendMiawMessage(
     }
 }
 
+/** A single entry returned by the SCRT2 listConversationEntries endpoint. */
+export interface ConversationEntry {
+    entryType: string;
+    /** The SCRT2 API returns this as a nested object (not a stringified string despite the docs). */
+    entryPayload: unknown;
+    transcribedTimestamp: number;
+    sender: { role: string; subject: string };
+    identifier: string;
+    senderDisplayName?: string;
+    clientTimestamp?: number;
+}
+
+/**
+ * List message entries for an existing MIAW conversation.
+ * Returns entries in reverse-chronological order (newest first, SCRT2 default);
+ * callers should reverse for display order.
+ * Fetches all entry types and filters by `Message` client-side to avoid
+ * query-param encoding issues with `entryTypeFilter`.
+ */
+export async function listConversationEntries(
+    scrt2Url: string,
+    accessToken: string,
+    conversationId: string,
+    limit = 50
+): Promise<ConversationEntry[]> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    const url = `${scrt2Url}/iamessage/api/v2/conversation/${conversationId}/entries?${params.toString()}`;
+    const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`MIAW listEntries failed ${res.status}: ${body}`);
+    }
+
+    const json = (await res.json()) as { conversationEntries?: ConversationEntry[] };
+    return (json.conversationEntries ?? []).filter((e) => e.entryType === 'Message');
+}
+
 /**
  * Close a MIAW conversation.
  * After closing, no more messages can be sent; the user must start a new session.

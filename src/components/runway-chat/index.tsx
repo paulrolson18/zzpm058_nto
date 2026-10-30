@@ -29,6 +29,8 @@ interface RunwayChatWidgetProps {
     characterVideoSrc?: string;
     agentName?: string;
     agentSubtitle?: string;
+    /** Custom greeting spoken by the character when voice mode starts. Mic is locked until it finishes. */
+    voiceGreeting?: string;
 }
 
 function RunwayChatWidgetInner({
@@ -36,6 +38,7 @@ function RunwayChatWidgetInner({
     characterVideoSrc,
     agentName = 'Shopper',
     agentSubtitle = 'AI Shopper Agent',
+    voiceGreeting,
 }: RunwayChatWidgetProps) {
     const { siteRef, localeRef } = useCurrentSiteAndLocaleRef();
     const tokenEndpoint = config.tokenEndpoint ?? `/${siteRef}/${localeRef}/api/runway-token`;
@@ -43,6 +46,7 @@ function RunwayChatWidgetInner({
     const sessionEndpoint = `/${siteRef}/${localeRef}/api/miaw-session`;
     const messageEndpoint = `/${siteRef}/${localeRef}/api/miaw-message`;
     const eventsEndpoint = `/${siteRef}/${localeRef}/api/miaw-events`;
+    const historyEndpoint = `/${siteRef}/${localeRef}/api/miaw-history`;
 
     const {
         isOpen,
@@ -55,10 +59,13 @@ function RunwayChatWidgetInner({
         clearMessages,
         endSession,
         retrySession,
+        registerSpeak,
         isAgentTyping,
         isSessionReady,
+        isSessionLoading,
+        isHistoryLoading,
         sessionError,
-    } = useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint });
+    } = useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint, historyEndpoint });
 
     // Voice transcript bridge: user speech → add optimistic bubble + send to MIAW
     const handleUserTranscript = useCallback(
@@ -96,9 +103,13 @@ function RunwayChatWidgetInner({
                         onClearChat={clearMessages}
                         onEndSession={endSession}
                         onRetrySession={retrySession}
+                        onRegisterSpeak={registerSpeak}
                         onUserTranscript={handleUserTranscript}
                         characterVideoSrc={characterVideoSrc}
+                        voiceGreeting={voiceGreeting}
                         isAgentTyping={isAgentTyping}
+                        isSessionLoading={isSessionLoading}
+                        isHistoryLoading={isHistoryLoading}
                         isSessionReady={isSessionReady}
                         sessionError={sessionError}
                     />

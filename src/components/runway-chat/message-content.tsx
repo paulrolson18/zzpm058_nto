@@ -16,52 +16,8 @@
 
 import { MarkdownBlock } from './message-blocks/markdown-block';
 import { SuggestionsBlock } from './message-blocks/suggestions-block';
-import { ProductCarouselBlock, type CarouselProduct } from './message-blocks/product-carousel-block';
-
-// ── Block types ────────────────────────────────────────────────────────────────
-
-interface MarkdownResponseBlock {
-    type: 'markdown';
-    index: number;
-    data: { content: string };
-}
-
-interface SuggestionsResponseBlock {
-    type: 'suggestions';
-    index: number;
-    data: { display_text: string[] };
-}
-
-interface ProductCarouselResponseBlock {
-    type: 'product_carousel';
-    index: number;
-    data: { title: string; products: CarouselProduct[] };
-}
-
-type ResponseBlock = MarkdownResponseBlock | SuggestionsResponseBlock | ProductCarouselResponseBlock;
-
-interface StructuredResponse {
-    response: ResponseBlock[];
-}
-
-// ── Parser ─────────────────────────────────────────────────────────────────────
-
-function parseStructuredResponse(text: string): StructuredResponse | null {
-    try {
-        const parsed = JSON.parse(text) as unknown;
-        if (
-            parsed !== null &&
-            typeof parsed === 'object' &&
-            'response' in parsed &&
-            Array.isArray((parsed as StructuredResponse).response)
-        ) {
-            return parsed as StructuredResponse;
-        }
-    } catch {
-        // not JSON — fall through to plain text
-    }
-    return null;
-}
+import { ProductCarouselBlock } from './message-blocks/product-carousel-block';
+import { parseStructuredResponse } from './parse-response';
 
 // ── Component ──────────────────────────────────────────────────────────────────
 

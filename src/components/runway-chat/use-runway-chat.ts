@@ -17,6 +17,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFetcher } from 'react-router';
 import { useMiawEvents } from '@/hooks/use-miaw-events';
+import { parseStructuredResponse } from './parse-response';
+
+// ── TTS helpers ────────────────────────────────────────────────────────────────
+
+function stripMarkdown(text: string): string {
+    return text.replace(/\*\*(.+?)\*\*/gs, '$1').replace(/\*([^*\n]+?)\*/g, '$1');
+}
+
+function extractSpeakableText(text: string): string {
+    const structured = parseStructuredResponse(text);
+    if (structured) {
+        const firstMarkdown = [...structured.response]
+            .sort((a, b) => a.index - b.index)
+            .find((b) => b.type === 'markdown');
+        return firstMarkdown?.type === 'markdown' ? stripMarkdown(firstMarkdown.data.content) : '';
+    }
+    return stripMarkdown(text);
+}
 
 export interface ChatMessage {
     id: string;
@@ -29,9 +47,15 @@ interface UseRunwayChatOptions {
     sessionEndpoint: string;
     messageEndpoint: string;
     eventsEndpoint: string;
+    historyEndpoint: string;
 }
 
-export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint }: UseRunwayChatOptions) {
+export function useRunwayChat({
+    sessionEndpoint,
+    messageEndpoint,
+    eventsEndpoint,
+    historyEndpoint,
+}: UseRunwayChatOptions) {
     const [isOpen, setIsOpen] = useState(false);
     const [isVoiceMode, setIsVoiceMode] = useState(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -39,11 +63,22 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
     const [isSessionReady, setIsSessionReady] = useState(false);
     const [sessionError, setSessionError] = useState<'config' | 'service' | null>(null);
 
-    const sessionFetcher = useFetcher();
+    const sessionFetcher = useFetcher<{ conversationId?: string; hasHistory?: boolean; error?: string }>();
     const messageFetcher = useFetcher();
+    const historyFetcher = useFetcher<{ messages: ChatMessage[] }>();
 
     // Track IDs of messages we sent ourselves so we can skip their SSE echo
     const sentIdsRef = useRef(new Set<string>());
+
+    // Ref mirrors for stable callbacks
+    const isVoiceModeRef = useRef(isVoiceMode);
+    isVoiceModeRef.current = isVoiceMode;
+
+    // Speak function registered by ChatCharacter when LiveKit is ready
+    const speakFnRef = useRef<((text: string) => void) | null>(null);
+    const registerSpeak = useCallback((fn: ((text: string) => void) | null) => {
+        speakFnRef.current = fn;
+    }, []);
 
     // ── Session init ────────────────────────────────────────────────────────
     useEffect(() => {
@@ -57,11 +92,24 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
         if ('error' in sessionFetcher.data) {
             const kind = sessionFetcher.data.error === 'config' ? 'config' : 'service';
             setSessionError(kind);
-        } else {
+        } else if ('conversationId' in sessionFetcher.data) {
+            // Only a POST response has conversationId; DELETE returns { ok: true } and must be ignored
+            // to avoid re-setting isSessionReady before the new session cookie is established.
             setIsSessionReady(true);
             setSessionError(null);
+            if (sessionFetcher.data.hasHistory) {
+                void historyFetcher.load(historyEndpoint);
+            }
         }
+        // historyFetcher and historyEndpoint are intentionally omitted — we only
+        // want this to run when sessionFetcher.data changes (new session response).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionFetcher.data]);
+
+    useEffect(() => {
+        if (!historyFetcher.data?.messages.length) return;
+        setMessages(historyFetcher.data.messages);
+    }, [historyFetcher.data]);
 
     // ── Inbound agent messages via SSE ──────────────────────────────────────
     const { close: closeMiawEvents } = useMiawEvents({
@@ -78,6 +126,11 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
                 ...prev,
                 { id: messageId || `agent-${Date.now()}`, role: 'agent', text, timestamp: new Date() },
             ]);
+            // Speak the response through the LiveKit character when voice mode is active
+            if (isVoiceModeRef.current && speakFnRef.current) {
+                const speakable = extractSpeakableText(text);
+                if (speakable) speakFnRef.current(speakable);
+            }
         }, []),
         onTyping: useCallback((isTyping: boolean) => setIsAgentTyping(isTyping), []),
     });
@@ -129,6 +182,7 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
     const clearMessages = useCallback(() => setMessages([]), []);
 
     const isSessionLoading = sessionFetcher.state !== 'idle' && !isSessionReady && !sessionError;
+    const isHistoryLoading = historyFetcher.state !== 'idle';
 
     return {
         isOpen,
@@ -141,9 +195,11 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
         clearMessages,
         endSession,
         retrySession,
+        registerSpeak,
         isAgentTyping,
         isSessionReady,
         isSessionLoading,
+        isHistoryLoading,
         sessionError,
     };
 }

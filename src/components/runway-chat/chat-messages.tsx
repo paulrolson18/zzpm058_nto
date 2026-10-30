@@ -22,6 +22,8 @@ import type { ChatMessage } from './use-runway-chat';
 interface ChatMessagesProps {
     messages: ChatMessage[];
     isAgentTyping?: boolean;
+    isSessionLoading?: boolean;
+    isHistoryLoading?: boolean;
     onSendMessage?: (text: string) => void;
     sessionError?: 'config' | 'service' | null;
     onRetrySession?: () => void;
@@ -79,17 +81,29 @@ function SessionError({ kind, onRetry }: { kind: 'config' | 'service'; onRetry?:
 export function ChatMessages({
     messages,
     isAgentTyping,
+    isSessionLoading,
+    isHistoryLoading,
     onSendMessage,
     sessionError,
     onRetrySession,
     className,
 }: ChatMessagesProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
-    const showSkeleton = messages.length === 0 && !sessionError;
+    const lastMsgRef = useRef<HTMLDivElement>(null);
+    const showSkeleton = messages.length === 0 && !sessionError && (isSessionLoading || isHistoryLoading);
+
+    const lastMsg = messages[messages.length - 1];
 
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, isAgentTyping]);
+        // Agent messages: scroll to the top of the message so the first text block is visible,
+        // not the bottom of a product carousel.
+        // Everything else (user message, typing indicator): scroll to absolute bottom.
+        if (lastMsg?.role === 'agent' && !isAgentTyping) {
+            lastMsgRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [messages, isAgentTyping, lastMsg?.role]);
 
     return (
         <div className={cn('flex flex-1 flex-col overflow-y-auto', className)}>
@@ -106,7 +120,7 @@ export function ChatMessages({
             {/* Messages — only rendered once the first message exists */}
             {(messages.length > 0 || isAgentTyping) && (
                 <div className="flex flex-col gap-3 p-4">
-                    {messages.map((msg) =>
+                    {messages.map((msg, i) =>
                         msg.role === 'user' ? (
                             <div
                                 key={msg.id}
@@ -114,7 +128,10 @@ export function ChatMessages({
                                 {msg.text}
                             </div>
                         ) : (
-                            <div key={msg.id} className="w-full">
+                            <div
+                                key={msg.id}
+                                ref={i === messages.length - 1 ? lastMsgRef : undefined}
+                                className="w-full">
                                 <MessageContent text={msg.text} onSuggestionClick={onSendMessage} />
                             </div>
                         )
