@@ -54,7 +54,10 @@ function RunwayChatWidgetInner({
         sendMessage,
         clearMessages,
         endSession,
+        retrySession,
         isAgentTyping,
+        isSessionReady,
+        sessionError,
     } = useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint });
 
     // Voice transcript bridge: user speech → add optimistic bubble + send to MIAW
@@ -92,9 +95,12 @@ function RunwayChatWidgetInner({
                         onSendMessage={sendMessage}
                         onClearChat={clearMessages}
                         onEndSession={endSession}
+                        onRetrySession={retrySession}
                         onUserTranscript={handleUserTranscript}
                         characterVideoSrc={characterVideoSrc}
                         isAgentTyping={isAgentTyping}
+                        isSessionReady={isSessionReady}
+                        sessionError={sessionError}
                     />
                 </Suspense>
             )}

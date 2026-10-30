@@ -101,7 +101,9 @@ export async function createMiawConversation(
 
     if (!res.ok) {
         const body = await res.text().catch(() => '');
-        throw new Error(`MIAW createConversation failed ${res.status}: ${body} | scrt2Url=${scrt2Url} esDeveloperName=${esDeveloperName}`);
+        throw new Error(
+            `MIAW createConversation failed ${res.status}: ${body} | scrt2Url=${scrt2Url} esDeveloperName=${esDeveloperName}`
+        );
     }
 }
 

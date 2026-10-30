@@ -37,6 +37,7 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [isAgentTyping, setIsAgentTyping] = useState(false);
     const [isSessionReady, setIsSessionReady] = useState(false);
+    const [sessionError, setSessionError] = useState<'config' | 'service' | null>(null);
 
     const sessionFetcher = useFetcher();
     const messageFetcher = useFetcher();
@@ -52,13 +53,18 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
     }, [isOpen, sessionEndpoint]);
 
     useEffect(() => {
-        if (sessionFetcher.data && !('error' in sessionFetcher.data)) {
+        if (!sessionFetcher.data) return;
+        if ('error' in sessionFetcher.data) {
+            const kind = sessionFetcher.data.error === 'config' ? 'config' : 'service';
+            setSessionError(kind);
+        } else {
             setIsSessionReady(true);
+            setSessionError(null);
         }
     }, [sessionFetcher.data]);
 
     // ── Inbound agent messages via SSE ──────────────────────────────────────
-    useMiawEvents({
+    const { close: closeMiawEvents } = useMiawEvents({
         eventsUrl: eventsEndpoint,
         enabled: isOpen && isSessionReady,
         onAgentMessage: useCallback((text: string, messageId: string) => {
@@ -95,19 +101,34 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
         [isSessionReady, messageEndpoint, messageFetcher]
     );
 
+    // ── Session retry ───────────────────────────────────────────────────────
+    const retrySession = useCallback(() => {
+        setSessionError(null);
+        void sessionFetcher.submit(null, { method: 'POST', action: sessionEndpoint });
+    }, [sessionEndpoint, sessionFetcher]);
+
     // ── Voice mode ──────────────────────────────────────────────────────────
     const startVoiceMode = useCallback(() => setIsVoiceMode(true), []);
     const stopVoiceMode = useCallback(() => setIsVoiceMode(false), []);
 
     // ── Session end (from "End session" dropdown item) ──────────────────────
     const endSession = useCallback(() => {
+        // Close SSE synchronously before DELETE so the server clearing the cookie
+        // doesn't trigger an auto-reconnect 401 cycle (useEffect cleanup is async/post-paint).
+        closeMiawEvents();
         void sessionFetcher.submit(null, { method: 'DELETE', action: sessionEndpoint });
         setIsSessionReady(false);
+        setIsVoiceMode(false);
+        setIsOpen(false);
+        setSessionError(null);
         setMessages([]);
+        setIsAgentTyping(false);
         sentIdsRef.current.clear();
-    }, [sessionEndpoint, sessionFetcher]);
+    }, [sessionEndpoint, sessionFetcher, closeMiawEvents]);
 
     const clearMessages = useCallback(() => setMessages([]), []);
+
+    const isSessionLoading = sessionFetcher.state !== 'idle' && !isSessionReady && !sessionError;
 
     return {
         isOpen,
@@ -119,7 +140,10 @@ export function useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint
         sendMessage,
         clearMessages,
         endSession,
+        retrySession,
         isAgentTyping,
         isSessionReady,
+        isSessionLoading,
+        sessionError,
     };
 }

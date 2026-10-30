@@ -47,19 +47,29 @@ interface MiawMessageContent {
  * Opens an EventSource to the MIAW SSE proxy and fires callbacks for agent messages
  * and typing indicators. Automatically closes the connection when `enabled` turns false.
  *
+ * Returns a `close()` function for callers that need to tear down the SSE synchronously
+ * (e.g. before issuing a session DELETE) rather than waiting for the next React paint.
+ *
  * The native EventSource reconnects on its own; Last-Event-ID is forwarded automatically
  * via the browser's built-in reconnect mechanism.
  */
-export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, enabled }: UseMiawEventsOptions): void {
+export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, enabled }: UseMiawEventsOptions): {
+    close: () => void;
+} {
     const onAgentMessageRef = useRef(onAgentMessage);
     const onTypingRef = useRef(onTyping);
     onAgentMessageRef.current = onAgentMessage;
     onTypingRef.current = onTyping;
 
+    // Holds the live EventSource so callers can close it synchronously without waiting for
+    // the useEffect cleanup (which runs after paint and would allow a reconnect 401 cycle).
+    const esRef = useRef<EventSource | null>(null);
+
     useEffect(() => {
         if (!enabled || typeof window === 'undefined') return;
 
         const es = new EventSource(eventsUrl);
+        esRef.current = es;
 
         es.addEventListener('CONVERSATION_MESSAGE', (event) => {
             try {
@@ -94,6 +104,14 @@ export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, enabled }: 
 
         return () => {
             es.close();
+            esRef.current = null;
         };
     }, [enabled, eventsUrl]);
+
+    return {
+        close: () => {
+            esRef.current?.close();
+            esRef.current = null;
+        },
+    };
 }

@@ -34,9 +34,12 @@ interface ChatPanelProps {
     onSendMessage: (text: string) => void;
     onClearChat: () => void;
     onEndSession: () => void;
+    onRetrySession?: () => void;
     onUserTranscript?: (text: string) => void;
     characterVideoSrc?: string;
     isAgentTyping?: boolean;
+    isSessionReady?: boolean;
+    sessionError?: 'config' | 'service' | null;
 }
 
 export function ChatPanel({
@@ -52,10 +55,15 @@ export function ChatPanel({
     onSendMessage,
     onClearChat,
     onEndSession,
+    onRetrySession,
     onUserTranscript,
     characterVideoSrc,
     isAgentTyping,
+    isSessionReady,
+    sessionError,
 }: ChatPanelProps) {
+    const inputDisabled = !isSessionReady || sessionError === 'config';
+
     return (
         <div
             role="dialog"
@@ -84,12 +92,19 @@ export function ChatPanel({
                     onUserTranscript={onUserTranscript}
                     characterVideoSrc={characterVideoSrc}
                     agentName={agentName}
+                    disabled={inputDisabled}
                 />
             </div>
 
-            <ChatMessages messages={messages} isAgentTyping={isAgentTyping} />
+            <ChatMessages
+                messages={messages}
+                isAgentTyping={isAgentTyping}
+                onSendMessage={onSendMessage}
+                sessionError={sessionError}
+                onRetrySession={onRetrySession}
+            />
 
-            <ChatInput onSendMessage={onSendMessage} onStartVoiceMode={onStartVoiceMode} />
+            <ChatInput onSendMessage={onSendMessage} onStartVoiceMode={onStartVoiceMode} disabled={inputDisabled} />
         </div>
     );
 }

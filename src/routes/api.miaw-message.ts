@@ -43,12 +43,18 @@ export async function action({ request, context }: Route.ActionArgs) {
         return data({ error: 'Missing id or text' }, { status: 400 });
     }
 
-    await sendMiawMessage(shopperAgent.scrt2Url, session.accessToken, session.conversationId, shopperAgent.esDeveloperName, {
-        id: body.id,
-        text: body.text.trim(),
-        isNewMessagingSession: !session.messageSent,
-        ...(shopperAgent.routingAttributes ? { routingAttributes: shopperAgent.routingAttributes } : {}),
-    });
+    await sendMiawMessage(
+        shopperAgent.scrt2Url,
+        session.accessToken,
+        session.conversationId,
+        shopperAgent.esDeveloperName,
+        {
+            id: body.id,
+            text: body.text.trim(),
+            isNewMessagingSession: !session.messageSent,
+            ...(shopperAgent.routingAttributes ? { routingAttributes: shopperAgent.routingAttributes } : {}),
+        }
+    );
 
     // Mark that at least one message has been sent — future messages won't restart routing
     if (!session.messageSent) {

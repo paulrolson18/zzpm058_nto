@@ -33,7 +33,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     const shopperAgent = resolveShopperAgentConfig(appConfig);
 
     if (!shopperAgent?.scrt2Url || !shopperAgent.salesforceOrgId || !shopperAgent.esDeveloperName) {
-        return data({ error: 'Shopper agent not configured' }, { status: 503 });
+        return data({ error: 'config' as const, message: 'Shopper agent not configured' }, { status: 503 });
     }
 
     const { scrt2Url, salesforceOrgId: orgId, esDeveloperName } = shopperAgent;
@@ -63,10 +63,14 @@ export async function action({ request, context }: Route.ActionArgs) {
     // 2. Token expired or no session — create a fresh conversation
     // (Reusing a stale conversationId risks 503s if Salesforce closed it, so always start fresh)
     const conversationId = randomUUID();
-    const { accessToken, expiresAt } = await getMiawAccessToken(scrt2Url, orgId, esDeveloperName);
-    await createMiawConversation(scrt2Url, accessToken, conversationId, esDeveloperName);
-
-    const session = { conversationId, accessToken, expiresAt, messageSent: false };
-    const setCookie = await serializeMiawSession(session, context);
-    return data({ conversationId }, { headers: { 'Set-Cookie': setCookie } });
+    try {
+        const { accessToken, expiresAt } = await getMiawAccessToken(scrt2Url, orgId, esDeveloperName);
+        await createMiawConversation(scrt2Url, accessToken, conversationId, esDeveloperName);
+        const session = { conversationId, accessToken, expiresAt, messageSent: false };
+        const setCookie = await serializeMiawSession(session, context);
+        return data({ conversationId }, { headers: { 'Set-Cookie': setCookie } });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return data({ error: 'service' as const, message }, { status: 503 });
+    }
 }

@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 interface ChatInputProps {
     onSendMessage: (text: string) => void;
     onStartVoiceMode: () => void;
+    disabled?: boolean;
     placeholder?: string;
     className?: string;
 }
@@ -28,6 +29,7 @@ interface ChatInputProps {
 export function ChatInput({
     onSendMessage,
     onStartVoiceMode,
+    disabled = false,
     placeholder = 'Ask Shopper Agent a question',
     className,
 }: ChatInputProps) {
@@ -36,7 +38,7 @@ export function ChatInput({
 
     const handleSend = () => {
         const trimmed = value.trim();
-        if (!trimmed) return;
+        if (!trimmed || disabled) return;
         onSendMessage(trimmed);
         setValue('');
         inputRef.current?.focus();
@@ -55,25 +57,30 @@ export function ChatInput({
                         handleSend();
                     }
                 }}
-                placeholder={placeholder}
+                disabled={disabled}
+                placeholder={disabled ? 'Connecting…' : placeholder}
                 aria-label="Message input"
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />
             <button
                 type="button"
-                onClick={onStartVoiceMode}
+                onClick={disabled ? undefined : onStartVoiceMode}
+                disabled={disabled}
                 aria-label="Start voice mode"
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                className={cn(
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    disabled ? 'cursor-not-allowed text-muted-foreground/40' : 'text-muted-foreground hover:bg-muted'
+                )}>
                 <Mic className="size-4" aria-hidden />
             </button>
             <button
                 type="button"
                 onClick={handleSend}
-                disabled={!value.trim()}
+                disabled={!value.trim() || disabled}
                 aria-label="Send message"
                 className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    value.trim()
+                    value.trim() && !disabled
                         ? 'bg-muted text-foreground hover:bg-muted/80'
                         : 'cursor-not-allowed bg-muted/50 text-muted-foreground'
                 )}>

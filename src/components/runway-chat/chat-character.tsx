@@ -177,6 +177,8 @@ interface ChatCharacterProps {
     onUserTranscript?: (text: string) => void;
     characterVideoSrc?: string;
     agentName?: string;
+    /** Disables the voice mode button while the chat session is initializing. */
+    disabled?: boolean;
 }
 
 export function ChatCharacter({
@@ -187,6 +189,7 @@ export function ChatCharacter({
     onUserTranscript,
     characterVideoSrc,
     agentName = 'NTO Agent',
+    disabled = false,
 }: ChatCharacterProps) {
     const { token, livekitUrl, isError } = useLivekitToken(tokenEndpoint, isVoiceMode);
 
@@ -216,8 +219,15 @@ export function ChatCharacter({
                 <div className="absolute inset-0 flex items-end justify-center pb-5">
                     <button
                         type="button"
-                        onClick={onStartVoiceMode}
-                        className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-lg transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                        onClick={disabled ? undefined : onStartVoiceMode}
+                        disabled={disabled}
+                        aria-label={`Speak with ${agentName}`}
+                        className={cn(
+                            'flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium shadow-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                            disabled
+                                ? 'cursor-not-allowed bg-primary/50 text-primary-foreground/60'
+                                : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                        )}>
                         <Mic className="size-4" aria-hidden />
                         {`Speak with ${agentName}`}
                     </button>
