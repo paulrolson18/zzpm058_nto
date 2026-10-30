@@ -14,86 +14,95 @@
  * limitations under the License.
  */
 
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useEffect } from 'react';
 import { useCurrentSiteAndLocaleRef } from '@/hooks/use-current-site-and-locale-ref';
 import { validateRunwayConfig, type RunwayConfig } from '@/utils/runway.utils';
 import { ChatFab } from './chat-fab';
 import { useRunwayChat } from './use-runway-chat';
 
-const ChatPanel = lazy(() =>
-  import('./chat-panel').then((m) => ({ default: m.ChatPanel })),
-);
+const ChatPanel = lazy(() => import('./chat-panel').then((m) => ({ default: m.ChatPanel })));
 
 interface RunwayChatWidgetProps {
-  config: RunwayConfig;
-  scrt2Url: string;
-  /** Path to a looping video file for the character preview, e.g. "/videos/bto-agent-video.mp4" */
-  characterVideoSrc?: string;
-  agentName?: string;
-  agentSubtitle?: string;
+    config: RunwayConfig;
+    scrt2Url: string;
+    /** Path to a looping video file for the character preview, e.g. "/videos/nto-agent-video.mp4" */
+    characterVideoSrc?: string;
+    agentName?: string;
+    agentSubtitle?: string;
 }
 
 function RunwayChatWidgetInner({
-  config,
-  scrt2Url,
-  characterVideoSrc,
-  agentName = 'Shopper',
-  agentSubtitle = 'AI Shopper Agent',
+    config,
+    characterVideoSrc,
+    agentName = 'Shopper',
+    agentSubtitle = 'AI Shopper Agent',
 }: RunwayChatWidgetProps) {
-  const { siteRef, localeRef } = useCurrentSiteAndLocaleRef();
-  const tokenEndpoint =
-    config.tokenEndpoint ?? `/${siteRef}/${localeRef}/api/runway-token`;
+    const { siteRef, localeRef } = useCurrentSiteAndLocaleRef();
+    const tokenEndpoint = config.tokenEndpoint ?? `/${siteRef}/${localeRef}/api/runway-token`;
 
-  const {
-    isOpen,
-    setIsOpen,
-    isVoiceMode,
-    startVoiceMode,
-    stopVoiceMode,
-    messages,
-    sendMessage,
-    addAgentMessage,
-    clearMessages,
-  } = useRunwayChat({ scrt2Url });
+    const sessionEndpoint = `/${siteRef}/${localeRef}/api/miaw-session`;
+    const messageEndpoint = `/${siteRef}/${localeRef}/api/miaw-message`;
+    const eventsEndpoint = `/${siteRef}/${localeRef}/api/miaw-events`;
 
-  // Whenever the panel hides, disconnect the LiveKit session and revert to the video preview.
-  // This handles the X button, future keyboard/outside-click dismissals, and agent inactivity timeouts.
-  useEffect(() => {
-    if (!isOpen) stopVoiceMode();
-  }, [isOpen, stopVoiceMode]);
+    const {
+        isOpen,
+        setIsOpen,
+        isVoiceMode,
+        startVoiceMode,
+        stopVoiceMode,
+        messages,
+        sendMessage,
+        clearMessages,
+        endSession,
+        isAgentTyping,
+    } = useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint });
 
-  return (
-    <>
-      {!isOpen && <ChatFab onClick={() => setIsOpen(true)} />}
+    // Voice transcript bridge: user speech → add optimistic bubble + send to MIAW
+    const handleUserTranscript = useCallback(
+        (text: string) => {
+            sendMessage(text);
+        },
+        [sendMessage]
+    );
 
-      {isOpen && (
-        <Suspense fallback={null}>
-          <ChatPanel
-            isOpen={isOpen}
-            onClose={() => {
-              stopVoiceMode();
-              setIsOpen(false);
-            }}
-            agentName={agentName}
-            agentSubtitle={agentSubtitle}
-            scrt2Url={scrt2Url}
-            tokenEndpoint={tokenEndpoint}
-            isVoiceMode={isVoiceMode}
-            onStartVoiceMode={startVoiceMode}
-            onStopVoiceMode={stopVoiceMode}
-            messages={messages}
-            onSendMessage={sendMessage}
-            onClearChat={clearMessages}
-            onAgentMessage={addAgentMessage}
-            characterVideoSrc={characterVideoSrc}
-          />
-        </Suspense>
-      )}
-    </>
-  );
+    // Whenever the panel hides, disconnect the LiveKit session and revert to the video preview.
+    useEffect(() => {
+        if (!isOpen) stopVoiceMode();
+    }, [isOpen, stopVoiceMode]);
+
+    return (
+        <>
+            {!isOpen && <ChatFab onClick={() => setIsOpen(true)} />}
+
+            {isOpen && (
+                <Suspense fallback={null}>
+                    <ChatPanel
+                        isOpen={isOpen}
+                        onClose={() => {
+                            stopVoiceMode();
+                            setIsOpen(false);
+                        }}
+                        agentName={agentName}
+                        agentSubtitle={agentSubtitle}
+                        tokenEndpoint={tokenEndpoint}
+                        isVoiceMode={isVoiceMode}
+                        onStartVoiceMode={startVoiceMode}
+                        onStopVoiceMode={stopVoiceMode}
+                        messages={messages}
+                        onSendMessage={sendMessage}
+                        onClearChat={clearMessages}
+                        onEndSession={endSession}
+                        onUserTranscript={handleUserTranscript}
+                        characterVideoSrc={characterVideoSrc}
+                        isAgentTyping={isAgentTyping}
+                    />
+                </Suspense>
+            )}
+        </>
+    );
 }
 
 export default function RunwayChatWidget(props: RunwayChatWidgetProps) {
-  if (!validateRunwayConfig(props.config)) return null;
-  return <RunwayChatWidgetInner {...props} />;
+    if (!validateRunwayConfig(props.config)) return null;
+    return <RunwayChatWidgetInner {...props} />;
 }

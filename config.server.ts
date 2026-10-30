@@ -764,27 +764,28 @@ export default defineConfig<Config>(
                 //   },
                 //
                 // See docs/README-SECURITY-HEADERS.md for the defaults table and recipes.
-                headers: livekitConnectSrcExtras.length === 0
-                    ? defaultSecurityHeaders
-                    : {
-                          ...defaultSecurityHeaders,
-                          csp: {
-                              ...defaultSecurityHeaders.csp,
-                              directives: {
-                                  ...defaultCspDirectives,
-                                  'connect-src': [
-                                      ...(defaultCspDirectives['connect-src'] ?? []),
-                                      ...livekitConnectSrcExtras,
-                                  ],
+                headers:
+                    livekitConnectSrcExtras.length === 0
+                        ? defaultSecurityHeaders
+                        : {
+                              ...defaultSecurityHeaders,
+                              csp: {
+                                  ...defaultSecurityHeaders.csp,
+                                  directives: {
+                                      ...defaultCspDirectives,
+                                      'connect-src': [
+                                          ...(defaultCspDirectives['connect-src'] ?? []),
+                                          ...livekitConnectSrcExtras,
+                                      ],
+                                  },
+                              },
+                              // Allow microphone from the same origin for LiveKit voice capture.
+                              // Default is [] → microphone=() (blocked); 'self' → microphone=(self).
+                              permissionsPolicy: {
+                                  ...defaultSecurityHeaders.permissionsPolicy,
+                                  microphone: ['self'],
                               },
                           },
-                          // Allow microphone from the same origin for LiveKit voice capture.
-                          // Default is [] → microphone=() (blocked); 'self' → microphone=(self).
-                          permissionsPolicy: {
-                              ...defaultSecurityHeaders.permissionsPolicy,
-                              microphone: ['self'],
-                          },
-                      },
             },
         },
     },

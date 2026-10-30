@@ -22,76 +22,74 @@ import { ChatMessages } from './chat-messages';
 import type { ChatMessage } from './use-runway-chat';
 
 interface ChatPanelProps {
-  isOpen: boolean;
-  onClose: () => void;
-  agentName: string;
-  agentSubtitle: string;
-  scrt2Url: string;
-  tokenEndpoint: string;
-  isVoiceMode: boolean;
-  onStartVoiceMode: () => void;
-  onStopVoiceMode: () => void;
-  messages: ChatMessage[];
-  onSendMessage: (text: string) => void;
-  onClearChat: () => void;
-  onAgentMessage?: (text: string) => void;
-  characterVideoSrc?: string;
+    isOpen: boolean;
+    onClose: () => void;
+    agentName: string;
+    agentSubtitle: string;
+    tokenEndpoint: string;
+    isVoiceMode: boolean;
+    onStartVoiceMode: () => void;
+    onStopVoiceMode: () => void;
+    messages: ChatMessage[];
+    onSendMessage: (text: string) => void;
+    onClearChat: () => void;
+    onEndSession: () => void;
+    onUserTranscript?: (text: string) => void;
+    characterVideoSrc?: string;
+    isAgentTyping?: boolean;
 }
 
 export function ChatPanel({
-  isOpen,
-  onClose,
-  agentName,
-  agentSubtitle,
-  scrt2Url,
-  tokenEndpoint,
-  isVoiceMode,
-  onStartVoiceMode,
-  onStopVoiceMode,
-  messages,
-  onSendMessage,
-  onClearChat,
-  onAgentMessage,
-  characterVideoSrc,
+    isOpen,
+    onClose,
+    agentName,
+    agentSubtitle,
+    tokenEndpoint,
+    isVoiceMode,
+    onStartVoiceMode,
+    onStopVoiceMode,
+    messages,
+    onSendMessage,
+    onClearChat,
+    onEndSession,
+    onUserTranscript,
+    characterVideoSrc,
+    isAgentTyping,
 }: ChatPanelProps) {
-  return (
-    <div
-      role="dialog"
-      aria-label={`Chat with ${agentName}`}
-      aria-modal="false"
-      className={cn(
-        'fixed inset-y-0 right-0 z-[9998] flex w-[380px] max-w-full flex-col border-l border-border bg-background shadow-xl',
-        'transition-transform duration-300 ease-in-out',
-        isOpen ? 'translate-x-0' : 'translate-x-full',
-      )}
-    >
-      {/* Shared wrapper: header + character section share the same horizontal padding so they align */}
-      <div className="shrink-0 px-4">
-        <ChatHeader
-          agentName={agentName}
-          agentSubtitle={agentSubtitle}
-          onClose={onClose}
-          onClearChat={onClearChat}
-          className="px-0"
-        />
-        <ChatCharacter
-          scrt2Url={scrt2Url}
-          tokenEndpoint={tokenEndpoint}
-          isVoiceMode={isVoiceMode}
-          onStartVoiceMode={onStartVoiceMode}
-          onStopVoiceMode={onStopVoiceMode}
-          onAgentMessage={onAgentMessage}
-          characterVideoSrc={characterVideoSrc}
-          agentName={agentName}
-        />
-      </div>
+    return (
+        <div
+            role="dialog"
+            aria-label={`Chat with ${agentName}`}
+            aria-modal="false"
+            className={cn(
+                'fixed inset-y-0 right-0 z-[9998] flex w-[380px] max-w-full flex-col border-l border-border bg-background shadow-xl',
+                'transition-transform duration-300 ease-in-out',
+                isOpen ? 'translate-x-0' : 'translate-x-full'
+            )}>
+            {/* Shared wrapper: header + character section share the same horizontal padding so they align */}
+            <div className="shrink-0 px-4">
+                <ChatHeader
+                    agentName={agentName}
+                    agentSubtitle={agentSubtitle}
+                    onClose={onClose}
+                    onClearChat={onClearChat}
+                    onEndSession={onEndSession}
+                    className="px-0"
+                />
+                <ChatCharacter
+                    tokenEndpoint={tokenEndpoint}
+                    isVoiceMode={isVoiceMode}
+                    onStartVoiceMode={onStartVoiceMode}
+                    onStopVoiceMode={onStopVoiceMode}
+                    onUserTranscript={onUserTranscript}
+                    characterVideoSrc={characterVideoSrc}
+                    agentName={agentName}
+                />
+            </div>
 
-      <ChatMessages messages={messages} />
+            <ChatMessages messages={messages} isAgentTyping={isAgentTyping} />
 
-      <ChatInput
-        onSendMessage={onSendMessage}
-        onStartVoiceMode={onStartVoiceMode}
-      />
-    </div>
-  );
+            <ChatInput onSendMessage={onSendMessage} onStartVoiceMode={onStartVoiceMode} />
+        </div>
+    );
 }

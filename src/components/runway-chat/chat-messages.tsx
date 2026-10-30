@@ -19,33 +19,42 @@ import { cn } from '@/lib/utils';
 import type { ChatMessage } from './use-runway-chat';
 
 interface ChatMessagesProps {
-  messages: ChatMessage[];
-  className?: string;
+    messages: ChatMessage[];
+    isAgentTyping?: boolean;
+    className?: string;
 }
 
-export function ChatMessages({ messages, className }: ChatMessagesProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+export function ChatMessages({ messages, isAgentTyping, className }: ChatMessagesProps) {
+    const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isAgentTyping]);
 
-  return (
-    <div className={cn('flex flex-1 flex-col gap-3 overflow-y-auto p-4', className)}>
-      {messages.map((msg) => (
-        <div
-          key={msg.id}
-          className={cn(
-            'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
-            msg.role === 'user'
-              ? 'ml-auto bg-primary text-primary-foreground'
-              : 'mr-auto bg-muted text-foreground',
-          )}
-        >
-          {msg.text}
+    return (
+        <div className={cn('flex flex-1 flex-col gap-3 overflow-y-auto p-4', className)}>
+            {messages.map((msg) => (
+                <div
+                    key={msg.id}
+                    className={cn(
+                        'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
+                        msg.role === 'user'
+                            ? 'ml-auto bg-primary text-primary-foreground'
+                            : 'mr-auto bg-muted text-foreground'
+                    )}>
+                    {msg.text}
+                </div>
+            ))}
+            {isAgentTyping && (
+                <div
+                    className="mr-auto flex items-center gap-1 rounded-2xl bg-muted px-4 py-3"
+                    aria-label="Agent is typing">
+                    <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                    <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                    <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
+                </div>
+            )}
+            <div ref={bottomRef} aria-hidden />
         </div>
-      ))}
-      <div ref={bottomRef} aria-hidden />
-    </div>
-  );
+    );
 }

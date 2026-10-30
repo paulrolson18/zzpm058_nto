@@ -14,70 +14,67 @@
  * limitations under the License.
  */
 
-import { useState, useEffect } from "react";
-import { createLogger } from "@/lib/logger";
+import { useState, useEffect } from 'react';
+import { createLogger } from '@/lib/logger';
 
-const logger = createLogger({ component: "runway" });
+const logger = createLogger({ component: 'runway' });
 
 export interface LivekitTokenState {
-  token: string | null;
-  livekitUrl: string | null;
-  isError: boolean;
+    token: string | null;
+    livekitUrl: string | null;
+    isError: boolean;
 }
 
 /**
  * Fetches a LiveKit room token from the server.
  * Room lifecycle is managed by <LiveKitRoom> from @livekit/components-react.
  */
-export function useLivekitToken(
-  tokenEndpoint: string,
-  enabled: boolean,
-): LivekitTokenState {
-  const [token, setToken] = useState<string | null>(null);
-  const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
-  const [isError, setIsError] = useState(false);
+export function useLivekitToken(tokenEndpoint: string, enabled: boolean): LivekitTokenState {
+    const [token, setToken] = useState<string | null>(null);
+    const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
+    const [isError, setIsError] = useState(false);
 
-  useEffect(() => {
-    if (!enabled) {
-      setToken(null);
-      setLivekitUrl(null);
-      setIsError(false);
-      return;
-    }
+    useEffect(() => {
+        if (!enabled) {
+            setToken(null);
+            setLivekitUrl(null);
+            setIsError(false);
+            return;
+        }
 
-    let cancelled = false;
-    setToken(null);
-    setLivekitUrl(null);
-    setIsError(false);
+        let cancelled = false;
+        setToken(null);
+        setLivekitUrl(null);
+        setIsError(false);
 
-    logger.info("[runway] fetching token", { tokenEndpoint });
+        logger.info('[runway] fetching token', { tokenEndpoint });
 
-    const fetchToken = async () => {
-      try {
-        const resp = await fetch(tokenEndpoint);
-        if (!resp.ok) throw new Error(`Token fetch failed: ${resp.status} ${resp.url}`);
-        const { token: t, livekitUrl: url } = JSON.parse(await resp.text()) as {
-          token: string;
-          livekitUrl: string;
+        const fetchToken = async () => {
+            try {
+                const resp = await fetch(tokenEndpoint);
+                if (!resp.ok) throw new Error(`Token fetch failed: ${resp.status} ${resp.url}`);
+                const { token: t, livekitUrl: url } = JSON.parse(await resp.text()) as {
+                    token: string;
+                    livekitUrl: string;
+                };
+                if (!cancelled) {
+                    logger.info('[runway] token received', { livekitUrl: url });
+                    setToken(t);
+                    setLivekitUrl(url);
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    logger.error('[runway] token fetch failed', { error: String(error) });
+                    setIsError(true);
+                }
+            }
         };
-        if (!cancelled) {
-          logger.info("[runway] token received", { livekitUrl: url });
-          setToken(t);
-          setLivekitUrl(url);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          logger.error("[runway] token fetch failed", { error: String(error) });
-          setIsError(true);
-        }
-      }
-    };
 
-    void fetchToken();
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, tokenEndpoint]);
+        void fetchToken();
+        return () => {
+            cancelled = true;
+        };
+    }, [enabled, tokenEndpoint]);
 
-  return { token, livekitUrl, isError };
+    return { token, livekitUrl, isError };
 }

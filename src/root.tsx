@@ -810,8 +810,14 @@ export default function App({
     return (
         <ComposeProviders providers={providers}>
             {passkeyEnabled ? <PasskeyRegistrationProvider>{innerTree}</PasskeyRegistrationProvider> : innerTree}
-            {runwayEnabled && shopperAgentEnabled && !shopperAgentDisabledByRoute && runwayConfig && shopperAgent?.scrt2Url ? (
-                <RunwayChatWidget config={runwayConfig} scrt2Url={shopperAgent.scrt2Url} characterVideoSrc="/videos/nto-agent-video.mp4" />
+            {runwayEnabled ? (
+                shopperAgentEnabled && !shopperAgentDisabledByRoute && runwayConfig && shopperAgent?.scrt2Url ? (
+                    <RunwayChatWidget
+                        config={runwayConfig}
+                        scrt2Url={shopperAgent.scrt2Url}
+                        characterVideoSrc="/videos/nto-agent-video.mp4"
+                    />
+                ) : null
             ) : (
                 <>
                     {shopperAgentEnabled && !shopperAgentDisabledByRoute && (

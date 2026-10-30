@@ -14,37 +14,29 @@
  * limitations under the License.
  */
 
-import type {
-  CspContributor,
-  CspContribution,
-} from "@salesforce/storefront-next-runtime/security";
-import type { RunwayConfig } from "@/utils/runway.utils.js";
-import { isRunwayEnabled } from "@/utils/runway.utils.js";
-import { toCspOrigin } from "./to-csp-origin.js";
+import type { CspContributor, CspContribution } from '@salesforce/storefront-next-runtime/security';
+import { isRunwayEnabled, type RunwayConfig } from '@/utils/runway.utils.js';
+import { toCspOrigin } from './to-csp-origin.js';
 
 /**
  * CSP contributor for the LiveKit WebSocket connection used by the Runway LiveAvatar.
  * Adds `connect-src wss://{livekitHost}` when the Runway agent is enabled.
  * Reads the URL from LIVEKIT_URL env var (server-side only) — not from the browser config.
  */
-export function createLivekitCspContributor(
-  config: RunwayConfig | undefined,
-): CspContributor {
-  return {
-    id: "livekit",
-    isActive: () => isRunwayEnabled(config?.enabled),
-    contribute: (): CspContribution => {
-      if (!isRunwayEnabled(config?.enabled)) return {};
+export function createLivekitCspContributor(config: RunwayConfig | undefined): CspContributor {
+    return {
+        id: 'livekit',
+        isActive: () => isRunwayEnabled(config?.enabled),
+        contribute: (): CspContribution => {
+            if (!isRunwayEnabled(config?.enabled)) return {};
 
-      const livekitUrl = process.env.LIVEKIT_URL;
-      if (!livekitUrl) return {};
+            const livekitUrl = process.env.LIVEKIT_URL;
+            if (!livekitUrl) return {};
 
-      const httpsOrigin = toCspOrigin(
-        livekitUrl.replace(/^wss?:\/\//, "https://"),
-      );
-      if (!httpsOrigin) return {};
+            const httpsOrigin = toCspOrigin(livekitUrl.replace(/^wss?:\/\//, 'https://'));
+            if (!httpsOrigin) return {};
 
-      return { "connect-src": [httpsOrigin] };
-    },
-  };
+            return { 'connect-src': [httpsOrigin] };
+        },
+    };
 }
