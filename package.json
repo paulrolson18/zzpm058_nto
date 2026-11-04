@@ -371,6 +371,5 @@
                 "comment": "For every built JS chunk that exceeds the baseline limit, you must explicitly approve it above. We must try our best to minimize the bundle size. These are uncompressed numbers (before gzip/brotli)."
             }
         ]
-    },
-    "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
+    }
 }
