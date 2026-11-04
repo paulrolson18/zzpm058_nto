@@ -58,7 +58,9 @@ pnpm-workspace.yaml
 
 # Ignore local Claude md file
 Claude.local.md
-
+# Ignore Claude Code worktrees and CLI metadata
+.claude/worktrees/
+.claude/settings.local.jso
 dw.json
 
 # Generated per-vertical tsconfigs (see scripts/internal/generate-vertical-tsconfig.mjs).
@@ -72,3 +74,6 @@ dw.json
 # The generator test writes a throwaway tsconfig.fashion.json for the route-less
 # case and deletes it in afterAll; ignore it so an interrupted run can't stage it.
 /tsconfig.fashion.json
+
+# Claude Code local config and worktrees
+.claude/

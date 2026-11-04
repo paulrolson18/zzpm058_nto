@@ -103,6 +103,8 @@ import { correlationContext } from '@/lib/correlation';
 import { AppToaster } from '@/components/toast';
 import { TrackingConsentBanner } from '@/components/tracking-consent-banner';
 import CimulateAgent, { isCimulateEnabled, resolveShopperAgentConfig } from '@/components/cimulate';
+import { isRunwayEnabled } from '@/components/runway';
+import RunwayChatWidget from '@/components/runway-chat';
 
 // Hooks
 import { useExecutePendingAction } from '@/hooks/use-execute-pending-action';
@@ -768,6 +770,8 @@ export default function App({
 
     const shopperAgent = resolveShopperAgentConfig(appConfig);
     const shopperAgentEnabled = isCimulateEnabled(shopperAgent?.enabled);
+    const runwayConfig = appConfig?.runwayAgent;
+    const runwayEnabled = isRunwayEnabled(runwayConfig?.enabled);
     const { pathname } = useLocation();
     const shopperAgentDisabledByRoute = useMemo(() => {
         const patterns = shopperAgent?.disabledPathPatterns;
@@ -806,11 +810,23 @@ export default function App({
     return (
         <ComposeProviders providers={providers}>
             {passkeyEnabled ? <PasskeyRegistrationProvider>{innerTree}</PasskeyRegistrationProvider> : innerTree}
-            {shopperAgentEnabled && !shopperAgentDisabledByRoute && (
-                <CimulateAgent cimulateConfiguration={shopperAgent} />
-            )}
-            {shopperAgentEnabled && shopperAgentDisabledByRoute && (
-                <style>{'.commerce-client-shopper-agent{display:none !important;}'}</style>
+            {runwayEnabled ? (
+                shopperAgentEnabled && !shopperAgentDisabledByRoute && runwayConfig && shopperAgent?.scrt2Url ? (
+                    <RunwayChatWidget
+                        config={runwayConfig}
+                        scrt2Url={shopperAgent.scrt2Url}
+                        characterVideoSrc="/videos/nto-agent-video.mp4"
+                    />
+                ) : null
+            ) : (
+                <>
+                    {shopperAgentEnabled && !shopperAgentDisabledByRoute && (
+                        <CimulateAgent cimulateConfiguration={shopperAgent} />
+                    )}
+                    {shopperAgentEnabled && shopperAgentDisabledByRoute && (
+                        <style>{'.commerce-client-shopper-agent{display:none !important;}'}</style>
+                    )}
+                </>
             )}
         </ComposeProviders>
     );
