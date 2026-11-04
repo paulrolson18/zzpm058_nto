@@ -777,6 +777,10 @@ export default defineConfig<Config>(
                                           ...(defaultCspDirectives['connect-src'] ?? []),
                                           ...livekitConnectSrcExtras,
                                       ],
+                                      'img-src': [
+                                          ...(defaultCspDirectives['img-src'] ?? []),
+                                          'https://s3.amazonaws.com',
+                                      ],
                                   },
                               },
                               // Allow microphone from the same origin for LiveKit voice capture.

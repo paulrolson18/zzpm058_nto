@@ -36,7 +36,7 @@ interface RunwayChatWidgetProps {
 function RunwayChatWidgetInner({
     config,
     characterVideoSrc,
-    agentName = 'Shopper',
+    agentName = 'Carter',
     agentSubtitle = 'AI Shopper Agent',
     voiceGreeting,
 }: RunwayChatWidgetProps) {

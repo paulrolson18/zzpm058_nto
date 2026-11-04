@@ -30,7 +30,7 @@ export function ChatInput({
     onSendMessage,
     onStartVoiceMode,
     disabled = false,
-    placeholder = 'Ask Shopper Agent a question',
+    placeholder = 'Ask Carter a question',
     className,
 }: ChatInputProps) {
     const [value, setValue] = useState('');

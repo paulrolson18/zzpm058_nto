@@ -32,7 +32,7 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger({ component: 'runway-chat' });
 
-const DEFAULT_VOICE_GREETING = "Hey! I'm Shopper, your NTO stylist. What are we looking for today?";
+const DEFAULT_VOICE_GREETING = "Hey! I'm Carter, your NTO stylist. What are we looking for today?";
 
 interface PanelCharacterRoomProps {
     onExit: () => void;
