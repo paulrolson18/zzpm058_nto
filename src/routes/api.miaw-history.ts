@@ -77,8 +77,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
                 const text = extractMessageText(entry.entryPayload);
                 if (!text) return null;
                 // SCRT2 uses 'EndUser' (PascalCase) for the sender role
-                const role =
-                    entry.sender.role === 'EndUser' || entry.sender.role === 'endUser' ? 'user' : 'agent';
+                const role = entry.sender.role === 'EndUser' || entry.sender.role === 'endUser' ? 'user' : 'agent';
                 return {
                     id: entry.identifier,
                     role: role as 'user' | 'agent',

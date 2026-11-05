@@ -16,7 +16,7 @@
 
 import { lazy, Suspense, useCallback, useEffect } from 'react';
 import { useCurrentSiteAndLocaleRef } from '@/hooks/use-current-site-and-locale-ref';
-import { validateRunwayConfig, type RunwayConfig } from '@/utils/runway.utils';
+import { RUNWAY_OPEN_EVENT, validateRunwayConfig, type RunwayConfig } from '@/utils/runway.utils';
 import { ChatFab } from './chat-fab';
 import { useRunwayChat } from './use-runway-chat';
 
@@ -74,6 +74,13 @@ function RunwayChatWidgetInner({
         },
         [sendMessage]
     );
+
+    // Let the header "Open chat" button (via openAgentWidget) open this panel.
+    useEffect(() => {
+        const open = () => setIsOpen(true);
+        window.addEventListener(RUNWAY_OPEN_EVENT, open);
+        return () => window.removeEventListener(RUNWAY_OPEN_EVENT, open);
+    }, [setIsOpen]);
 
     // Whenever the panel hides, disconnect the LiveKit session and revert to the video preview.
     useEffect(() => {

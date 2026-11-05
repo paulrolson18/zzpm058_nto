@@ -764,32 +764,26 @@ export default defineConfig<Config>(
                 //   },
                 //
                 // See docs/README-SECURITY-HEADERS.md for the defaults table and recipes.
-                headers:
-                    livekitConnectSrcExtras.length === 0
-                        ? defaultSecurityHeaders
-                        : {
-                              ...defaultSecurityHeaders,
-                              csp: {
-                                  ...defaultSecurityHeaders.csp,
-                                  directives: {
-                                      ...defaultCspDirectives,
-                                      'connect-src': [
-                                          ...(defaultCspDirectives['connect-src'] ?? []),
-                                          ...livekitConnectSrcExtras,
-                                      ],
-                                      'img-src': [
-                                          ...(defaultCspDirectives['img-src'] ?? []),
-                                          'https://s3.amazonaws.com',
-                                      ],
-                                  },
-                              },
-                              // Allow microphone from the same origin for LiveKit voice capture.
-                              // Default is [] → microphone=() (blocked); 'self' → microphone=(self).
-                              permissionsPolicy: {
-                                  ...defaultSecurityHeaders.permissionsPolicy,
-                                  microphone: ['self'],
-                              },
-                          },
+                headers: {
+                    ...defaultSecurityHeaders,
+                    csp: {
+                        ...defaultSecurityHeaders.csp,
+                        directives: {
+                            ...defaultCspDirectives,
+                            'connect-src': [...(defaultCspDirectives['connect-src'] ?? []), ...livekitConnectSrcExtras],
+                            // Product images are served from the NTO S3 bucket (always needed).
+                            'img-src': [...(defaultCspDirectives['img-src'] ?? []), 'https://s3.amazonaws.com'],
+                        },
+                    },
+                    // Allow microphone from the same origin for LiveKit voice capture.
+                    // Default is [] → microphone=() (blocked); 'self' → microphone=(self).
+                    ...(livekitConnectSrcExtras.length > 0 && {
+                        permissionsPolicy: {
+                            ...defaultSecurityHeaders.permissionsPolicy,
+                            microphone: ['self'],
+                        },
+                    }),
+                },
             },
         },
     },

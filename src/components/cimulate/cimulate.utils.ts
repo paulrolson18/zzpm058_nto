@@ -15,6 +15,7 @@
  */
 
 import { createLogger } from '@/lib/logger';
+import { RUNWAY_OPEN_EVENT } from '@/utils/runway.utils';
 
 const logger = createLogger();
 
@@ -411,6 +412,8 @@ export function openAgentWidget(): void {
     try {
         window.dispatchEvent(new Event(CIMULATE_LOAD_EVENT));
         openCimulateWidget(true);
+        // No-op unless the Runway chat widget is mounted in place of Cimulate.
+        window.dispatchEvent(new Event(RUNWAY_OPEN_EVENT));
     } catch (error) {
         logger.error('Error opening agent widget', { error });
     }

@@ -18,6 +18,9 @@ import { createLogger } from '@/lib/logger';
 
 const logger = createLogger();
 
+/** Window event that asks the Runway chat widget to open (fired by `openAgentWidget()`). */
+export const RUNWAY_OPEN_EVENT = 'runway:open';
+
 export interface RunwayConfig {
     enabled: string | boolean;
     tokenEndpoint?: string;
