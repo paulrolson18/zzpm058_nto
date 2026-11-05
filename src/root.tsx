@@ -200,6 +200,7 @@ export const clientMiddleware: MiddlewareFunction<Record<string, DataStrategyRes
 // first client render matches the server-rendered translated HTML (no hydration
 // mismatch) without inlining the translation bundle into the document.
 import { i18nextOnClient } from '@/i18n-client-init';
+import { resolveAssetUrl } from '@/lib/utils';
 
 export { shouldRevalidate } from '@/lib/revalidation/routes/root';
 
@@ -815,7 +816,7 @@ export default function App({
                     <RunwayChatWidget
                         config={runwayConfig}
                         scrt2Url={shopperAgent.scrt2Url}
-                        characterVideoSrc="/videos/nto-agent-video.mp4"
+                        characterVideoSrc={resolveAssetUrl('/videos/nto-agent-video.mp4')}
                     />
                 ) : null
             ) : (
