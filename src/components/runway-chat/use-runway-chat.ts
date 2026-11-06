@@ -199,9 +199,6 @@ export function useRunwayChat({
 
     const clearMessages = useCallback(() => setMessages([]), []);
 
-    const isSessionLoading = sessionFetcher.state !== 'idle' && !isSessionReady && !sessionError;
-    const isHistoryLoading = historyFetcher.state !== 'idle';
-
     return {
         isOpen,
         setIsOpen,
@@ -216,8 +213,6 @@ export function useRunwayChat({
         registerSpeak,
         isAgentTyping,
         isSessionReady,
-        isSessionLoading,
-        isHistoryLoading,
         sessionError,
     };
 }

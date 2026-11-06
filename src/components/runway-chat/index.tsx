@@ -62,8 +62,6 @@ function RunwayChatWidgetInner({
         registerSpeak,
         isAgentTyping,
         isSessionReady,
-        isSessionLoading,
-        isHistoryLoading,
         sessionError,
     } = useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint, historyEndpoint });
 
@@ -115,8 +113,6 @@ function RunwayChatWidgetInner({
                         characterVideoSrc={characterVideoSrc}
                         voiceGreeting={voiceGreeting}
                         isAgentTyping={isAgentTyping}
-                        isSessionLoading={isSessionLoading}
-                        isHistoryLoading={isHistoryLoading}
                         isSessionReady={isSessionReady}
                         sessionError={sessionError}
                     />

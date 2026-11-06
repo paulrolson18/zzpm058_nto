@@ -824,7 +824,7 @@ export default function App({
                     <RunwayChatWidget
                         config={runwayConfig}
                         scrt2Url={shopperAgent.scrt2Url}
-                        characterVideoSrc={resolveAssetUrl('/videos/nto-agent-video.mp4')}
+                        characterVideoSrc={resolveAssetUrl('/images/carter-gif.gif')}
                     />
                 ) : null
             ) : (

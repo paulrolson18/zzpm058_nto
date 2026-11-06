@@ -50,6 +50,9 @@ function extractMessageText(entryPayload: unknown): string | null {
  *       to ChatMessage[]. Returns an empty array when there is no session,
  *       the session has no sent messages yet, or SCRT2 returns an error (fail-open).
  */
+
+export const shouldRevalidate = () => false;
+
 export async function loader({ request, context }: Route.LoaderArgs) {
     const session = await getMiawSession(request, context);
 

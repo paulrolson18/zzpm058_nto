@@ -108,7 +108,7 @@ export function ProductCarouselBlock({ title, products }: ProductCarouselBlockPr
                         return (
                             <div
                                 key={product.id}
-                                className="flex min-w-[136px] max-w-[136px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-background">
+                                className="relative flex min-w-[136px] max-w-[136px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-background">
                                 <img
                                     src={imageUrl}
                                     alt={name}
@@ -126,9 +126,9 @@ export function ProductCarouselBlock({ title, products }: ProductCarouselBlockPr
                                         href={productPageUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="mt-auto flex items-center gap-0.5 text-[10px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                                        <ExternalLink className="size-2.5" aria-hidden />
-                                        View
+                                        className="mt-auto flex items-center gap-0.5 text-[10px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring after:absolute after:inset-0">
+                                        <ExternalLink className="relative z-10 size-2.5" aria-hidden />
+                                        <span className="relative z-10">View</span>
                                     </a>
                                 </div>
                             </div>

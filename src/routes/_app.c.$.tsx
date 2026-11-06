@@ -321,42 +321,47 @@ export async function loader(args: Route.LoaderArgs): Promise<CategoryPageData> 
           }
         : null;
 
-    // Generate category schema in loader (server-side) for SEO
-    const categorySchemaPromise = searchResultNonCritical
-        .then((searchResult: ShopperSearch.schemas['ProductSearchResult']) => {
-            try {
-                // Validate inputs before generating schema
-                if (!categoryData || !searchResult) {
+    // Generate category schema in loader (server-side) for SEO.
+    // Race against a 4s timeout so a slow SCAPI response never exceeds the
+    // 5s stream timeout in entry.server.tsx — JSON-LD is non-critical SEO data.
+    const categorySchemaPromise = Promise.race([
+        searchResultNonCritical
+            .then((searchResult: ShopperSearch.schemas['ProductSearchResult']) => {
+                try {
+                    // Validate inputs before generating schema
+                    if (!categoryData || !searchResult) {
+                        return null;
+                    }
+                    return generateCategorySchema({
+                        category: categoryData,
+                        searchResult: {
+                            ...searchResult,
+                            hits: [...(searchResultCritical.hits || []), ...(searchResult.hits || [])],
+                        },
+                        config,
+                        seoUrlContext: {
+                            siteId: siteCtx.site.id,
+                            urlPrefix: config.url?.prefix,
+                            seoRoutes: config.url?.seoRoutes,
+                        },
+                        pageUrl,
+                        defaultCurrency: currency,
+                    });
+                } catch (error) {
+                    logger.error('Error generating category schema in loader', {
+                        error,
+                    });
                     return null;
                 }
-                return generateCategorySchema({
-                    category: categoryData,
-                    searchResult: {
-                        ...searchResult,
-                        hits: [...(searchResultCritical.hits || []), ...(searchResult.hits || [])],
-                    },
-                    config,
-                    seoUrlContext: {
-                        siteId: siteCtx.site.id,
-                        urlPrefix: config.url?.prefix,
-                        seoRoutes: config.url?.seoRoutes,
-                    },
-                    pageUrl,
-                    defaultCurrency: currency,
-                });
-            } catch (error) {
-                logger.error('Error generating category schema in loader', {
+            })
+            .catch((error) => {
+                logger.error('Error in category schema promise chain', {
                     error,
                 });
                 return null;
-            }
-        })
-        .catch((error) => {
-            logger.error('Error in category schema promise chain', {
-                error,
-            });
-            return null;
-        });
+            }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+    ]);
 
     return {
         category: categoryData,

@@ -244,14 +244,11 @@ export function ChatCharacter({
 
     if (!isVoiceMode) {
         return (
-            <div className="relative w-full shrink-0 overflow-hidden bg-black/100" style={{ aspectRatio: '4/3' }}>
+            <div className="relative w-full shrink-0 overflow-hidden bg-black/100" style={{ aspectRatio: '16/9' }}>
                 {characterVideoSrc ? (
-                    <video
+                    <img
                         src={characterVideoSrc}
-                        loop
-                        autoPlay
-                        muted
-                        playsInline
+                        alt=""
                         className="h-full w-full object-cover"
                         aria-hidden
                     />

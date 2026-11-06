@@ -40,8 +40,6 @@ interface ChatPanelProps {
     characterVideoSrc?: string;
     voiceGreeting?: string;
     isAgentTyping?: boolean;
-    isSessionLoading?: boolean;
-    isHistoryLoading?: boolean;
     isSessionReady?: boolean;
     sessionError?: 'config' | 'service' | null;
 }
@@ -65,8 +63,6 @@ export function ChatPanel({
     characterVideoSrc,
     voiceGreeting,
     isAgentTyping,
-    isSessionLoading,
-    isHistoryLoading,
     isSessionReady,
     sessionError,
 }: ChatPanelProps) {
@@ -109,8 +105,6 @@ export function ChatPanel({
             <ChatMessages
                 messages={messages}
                 isAgentTyping={isAgentTyping}
-                isSessionLoading={isSessionLoading}
-                isHistoryLoading={isHistoryLoading}
                 onSendMessage={onSendMessage}
                 sessionError={sessionError}
                 onRetrySession={onRetrySession}
