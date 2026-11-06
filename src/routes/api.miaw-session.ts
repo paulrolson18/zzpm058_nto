@@ -21,6 +21,7 @@ import { getConfig } from '@salesforce/storefront-next-runtime/config';
 import { resolveShopperAgentConfig } from '@/components/cimulate/cimulate.utils';
 import { getMiawAccessToken, createMiawConversation, closeMiawConversation } from '@/lib/miaw/miaw.server';
 import { getMiawSession, serializeMiawSession, isMiawSessionValid } from '@/lib/miaw/miaw-cookie.server';
+import { getNavigationCategories, isNavigationCategoriesCached } from '@/lib/navigation-category-cache.server';
 
 /**
  * Resource route: manages the MIAW conversation session lifecycle.
@@ -68,6 +69,11 @@ export async function action({ request, context }: Route.ActionArgs) {
         await createMiawConversation(scrt2Url, accessToken, conversationId, esDeveloperName);
         const session = { conversationId, accessToken, expiresAt, messageSent: false };
         const setCookie = await serializeMiawSession(session, context);
+        // Fallback warm-up: if the page load attempt failed (SCAPI was down),
+        // try again now so the first message always hits the cache.
+        if (!isNavigationCategoriesCached(context, 'miaw-session')) {
+            void getNavigationCategories(context, 'miaw-session').catch(() => {});
+        }
         return data({ conversationId, hasHistory: false }, { headers: { 'Set-Cookie': setCookie } });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

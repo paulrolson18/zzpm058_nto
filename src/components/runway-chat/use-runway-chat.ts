@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFetcher } from 'react-router';
 import { useMiawEvents } from '@/hooks/use-miaw-events';
 import { parseStructuredResponse } from './parse-response';
+import { useNavigate } from '@/hooks/use-navigate';
 
 // ── TTS helpers ────────────────────────────────────────────────────────────────
 
@@ -63,8 +64,10 @@ export function useRunwayChat({
     const [isSessionReady, setIsSessionReady] = useState(false);
     const [sessionError, setSessionError] = useState<'config' | 'service' | null>(null);
 
+    const navigate = useNavigate();
+
     const sessionFetcher = useFetcher<{ conversationId?: string; hasHistory?: boolean; error?: string }>();
-    const messageFetcher = useFetcher();
+    const messageFetcher = useFetcher<{ ok?: boolean; navigateTo?: string; error?: string }>();
     const historyFetcher = useFetcher<{ messages: ChatMessage[] }>();
 
     // Track IDs of messages we sent ourselves so we can skip their SSE echo
@@ -101,8 +104,6 @@ export function useRunwayChat({
                 void historyFetcher.load(historyEndpoint);
             }
         }
-        // historyFetcher and historyEndpoint are intentionally omitted — we only
-        // want this to run when sessionFetcher.data changes (new session response).
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionFetcher.data]);
 
@@ -110,6 +111,23 @@ export function useRunwayChat({
         if (!historyFetcher.data?.messages.length) return;
         setMessages(historyFetcher.data.messages);
     }, [historyFetcher.data]);
+
+    // ── Message send errors (e.g. MIAW session expired / service down) ─────
+    useEffect(() => {
+        if (messageFetcher.data?.error) {
+            setSessionError('service');
+        }
+    }, [messageFetcher.data]);
+
+    // ── Navigation intent ───────────────────────────────────────────────────
+    const handledNavigateRef = useRef<string | null>(null);
+    useEffect(() => {
+        const url = messageFetcher.data?.navigateTo;
+        if (url && url !== handledNavigateRef.current) {
+            handledNavigateRef.current = url;
+            navigate(url);
+        }
+    }, [messageFetcher.data, navigate]);
 
     // ── Inbound agent messages via SSE ──────────────────────────────────────
     const { close: closeMiawEvents } = useMiawEvents({

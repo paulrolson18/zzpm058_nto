@@ -201,6 +201,7 @@ export const clientMiddleware: MiddlewareFunction<Record<string, DataStrategyRes
 // mismatch) without inlining the translation bundle into the document.
 import { i18nextOnClient } from '@/i18n-client-init';
 import { resolveAssetUrl } from '@/lib/utils';
+import { getNavigationCategories, isNavigationCategoriesCached } from '@/lib/navigation-category-cache.server';
 
 export { shouldRevalidate } from '@/lib/revalidation/routes/root';
 
@@ -282,6 +283,13 @@ export const loader = ({
 
     // CSP nonce produced by securityHeadersMiddleware; null when middleware is disabled.
     const nonce = getSecurityNonce(context);
+
+    // Warm the navigation category cache in the background so it's ready before
+    // the user sends their first chat message. Guard prevents redundant SCAPI
+    // calls on subsequent SPA navigations once the cache is warm.
+    if (!isNavigationCategoriesCached(context, 'page-load')) {
+        void getNavigationCategories(context, 'page-load').catch(() => {});
+    }
 
     return {
         // Read the precomputed client view from the context — `appConfigMiddlewareServer`
