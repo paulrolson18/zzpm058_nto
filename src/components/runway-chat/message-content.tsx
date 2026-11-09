@@ -14,9 +14,12 @@
  * limitations under the License.
  */
 
+import { useCallback } from 'react';
 import { MarkdownBlock } from './message-blocks/markdown-block';
 import { SuggestionsBlock } from './message-blocks/suggestions-block';
-import { ProductCarouselBlock } from './message-blocks/product-carousel-block';
+import { ProductCarouselBlock, type CarouselProduct } from './message-blocks/product-carousel-block';
+import { ProductTileBlock } from './message-blocks/product-tile-block';
+import { CartBlock } from './message-blocks/cart-block';
 import { parseStructuredResponse } from './parse-response';
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -28,6 +31,16 @@ interface MessageContentProps {
 
 export function MessageContent({ text, onSuggestionClick }: MessageContentProps) {
     const structured = parseStructuredResponse(text);
+
+    const handleProductClick = useCallback(
+        (product: CarouselProduct) => {
+            const { name } = product.data;
+            onSuggestionClick?.(
+                `Show me details for ${name} [SKU: ${product.id}] (Viewing product details for: ${product.id})`
+            );
+        },
+        [onSuggestionClick]
+    );
 
     // Plain text — render inside a standard bubble
     if (!structured) {
@@ -70,8 +83,23 @@ export function MessageContent({ text, onSuggestionClick }: MessageContentProps)
                             key={block.index}
                             title={block.data.title}
                             products={block.data.products}
+                            onProductClick={handleProductClick}
                         />
                     );
+                }
+
+                if (block.type === 'product_tile') {
+                    return (
+                        <ProductTileBlock
+                            key={block.index}
+                            product={block.data}
+                            onAction={onSuggestionClick}
+                        />
+                    );
+                }
+
+                if (block.type === 'cart') {
+                    return <CartBlock key={block.index} data={block.data} />;
                 }
 
                 return null;

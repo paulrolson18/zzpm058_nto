@@ -15,6 +15,7 @@
  */
 
 import type { CarouselProduct } from './message-blocks/product-carousel-block';
+import type { ProductTileData } from './message-blocks/product-tile-block';
 
 export interface MarkdownResponseBlock {
     type: 'markdown';
@@ -34,7 +35,57 @@ export interface ProductCarouselResponseBlock {
     data: { title: string; products: CarouselProduct[] };
 }
 
-export type ResponseBlock = MarkdownResponseBlock | SuggestionsResponseBlock | ProductCarouselResponseBlock;
+export interface ProductTileResponseBlock {
+    type: 'product_tile';
+    index: number;
+    data: ProductTileData;
+}
+
+export interface CartItem {
+    productId: string;
+    name: string;
+    quantity: number;
+    itemSubtotal: number;
+    imageUrl: string;
+    variants: Array<{ value: string; lbl: string; type: string }>;
+}
+
+export interface CartDetails {
+    total: number;
+    subtotal: number;
+    currencyCode: string;
+    headerMessage: string;
+    bodyMessage: string;
+    footerMessage: string | null;
+    checkoutButtonUrl: string;
+    expressPaymentUrl?: string;
+    items: CartItem[];
+    shippingCost?: number;
+    shippingDiscount?: number | null;
+    promotionsDiscount?: number | null;
+    couponsDiscount?: number | null;
+    taxes?: number | null;
+}
+
+export interface CartResponseBlock {
+    type: 'cart';
+    index: number;
+    data: {
+        products_to_highlight: string[];
+        cart: {
+            cartSummary: {
+                cartDetails: CartDetails;
+            };
+        };
+    };
+}
+
+export type ResponseBlock =
+    | MarkdownResponseBlock
+    | SuggestionsResponseBlock
+    | ProductCarouselResponseBlock
+    | ProductTileResponseBlock
+    | CartResponseBlock;
 
 export interface StructuredResponse {
     response: ResponseBlock[];
