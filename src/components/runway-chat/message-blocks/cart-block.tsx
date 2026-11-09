@@ -169,13 +169,13 @@ export function CartBlock({ data }: CartBlockProps) {
                 </div>
 
                 {/* Checkout button — outlined */}
-                <a
-                    href={details.checkoutButtonUrl}
+                <button
+                    type="button"
                     className="flex w-full items-center justify-center gap-2 rounded border border-primary px-4 py-2 text-sm font-medium text-primary"
                 >
                     <ExternalLink className="h-4 w-4" />
                     Checkout
-                </a>
+                </button>
 
                 <p className="text-center text-[10px] text-muted-foreground">
                     Shipping and taxes calculated at checkout.
