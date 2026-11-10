@@ -17,38 +17,18 @@
 import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { MessageContent } from './message-content';
+import { ChatSkeleton } from './chat-skeleton';
 import type { ChatMessage } from './use-runway-chat';
 
 interface ChatMessagesProps {
     messages: ChatMessage[];
     isAgentTyping?: boolean;
-    isSessionLoading?: boolean;
-    isHistoryLoading?: boolean;
     onSendMessage?: (text: string) => void;
     sessionError?: 'config' | 'service' | null;
     onRetrySession?: () => void;
     className?: string;
 }
 
-function SkeletonLine({ className }: { className?: string }) {
-    return (
-        <div className={cn('relative overflow-hidden rounded-full bg-muted', className)}>
-            <div className="absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-foreground/[0.06] to-transparent" />
-        </div>
-    );
-}
-
-function ChatSkeleton() {
-    return (
-        <div className="flex flex-col gap-3 p-4" aria-label="Connecting to agent" aria-busy="true">
-            <div className="flex flex-col gap-2.5 rounded-2xl bg-muted px-4 py-3">
-                <SkeletonLine className="h-2.5 w-[72%]" />
-                <SkeletonLine className="h-2.5 w-[55%]" />
-                <SkeletonLine className="h-2.5 w-[38%]" />
-            </div>
-        </div>
-    );
-}
 
 function SessionError({ kind, onRetry }: { kind: 'config' | 'service'; onRetry?: () => void }) {
     if (kind === 'config') {
@@ -81,8 +61,6 @@ function SessionError({ kind, onRetry }: { kind: 'config' | 'service'; onRetry?:
 export function ChatMessages({
     messages,
     isAgentTyping,
-    isSessionLoading,
-    isHistoryLoading,
     onSendMessage,
     sessionError,
     onRetrySession,
@@ -90,7 +68,9 @@ export function ChatMessages({
 }: ChatMessagesProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
     const lastMsgRef = useRef<HTMLDivElement>(null);
-    const showSkeleton = messages.length === 0 && !sessionError && (isSessionLoading || isHistoryLoading);
+    // Show skeleton until the first message arrives — covers both new sessions
+    // (waiting for SSE greeting) and returning sessions (waiting for history load).
+    const showSkeleton = messages.length === 0 && !sessionError;
 
     const lastMsg = messages[messages.length - 1];
 
@@ -106,7 +86,7 @@ export function ChatMessages({
     }, [messages, isAgentTyping, lastMsg?.role]);
 
     return (
-        <div className={cn('flex flex-1 flex-col overflow-y-auto', className)}>
+        <div className={cn('flex flex-1 flex-col overflow-x-hidden overflow-y-auto', className)}>
             {/* Skeleton — removed from DOM as soon as messages or an error arrive */}
             {showSkeleton && <ChatSkeleton />}
 

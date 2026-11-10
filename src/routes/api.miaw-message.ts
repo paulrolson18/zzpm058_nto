@@ -17,9 +17,13 @@
 import { data } from 'react-router';
 import type { Route } from './+types/api.miaw-message';
 import { getConfig } from '@salesforce/storefront-next-runtime/config';
+import { siteContext } from '@salesforce/storefront-next-runtime/site-context';
 import { resolveShopperAgentConfig } from '@/components/cimulate/cimulate.utils';
 import { sendMiawMessage } from '@/lib/miaw/miaw.server';
 import { getMiawSession, serializeMiawSession } from '@/lib/miaw/miaw-cookie.server';
+import { getNavigationCategories } from '@/lib/navigation-category-cache.server';
+import { detectNavigationIntent } from '@/lib/detect-navigation-intent.server';
+import type { SeoUrlContext } from '@/route-paths';
 
 /**
  * Resource route: sends a text message to the active MIAW conversation.
@@ -43,25 +47,46 @@ export async function action({ request, context }: Route.ActionArgs) {
         return data({ error: 'Missing id or text' }, { status: 400 });
     }
 
-    await sendMiawMessage(
-        shopperAgent.scrt2Url,
-        session.accessToken,
-        session.conversationId,
-        shopperAgent.esDeveloperName,
-        {
-            id: body.id,
-            text: body.text.trim(),
-            isNewMessagingSession: !session.messageSent,
-            ...(shopperAgent.routingAttributes ? { routingAttributes: shopperAgent.routingAttributes } : {}),
-        }
-    );
+    const siteCtx = context.get(siteContext);
+    const seoUrlContext: SeoUrlContext = {
+        siteId: siteCtx?.site?.id ?? '',
+        urlPrefix: appConfig.url?.prefix,
+        seoRoutes: appConfig.url?.seoRoutes,
+    };
+
+    // allSettled: a MIAW failure never discards a detected navigation intent.
+    const [miawResult, intentResult] = await Promise.allSettled([
+        sendMiawMessage(
+            shopperAgent.scrt2Url,
+            session.accessToken,
+            session.conversationId,
+            shopperAgent.esDeveloperName,
+            {
+                id: body.id,
+                text: body.text.trim(),
+                isNewMessagingSession: !session.messageSent,
+                ...(shopperAgent.routingAttributes ? { routingAttributes: shopperAgent.routingAttributes } : {}),
+            }
+        ),
+        getNavigationCategories(context, 'miaw-message')
+            .then((cats) => detectNavigationIntent(body.text!.trim(), cats, seoUrlContext))
+            .catch(() => null),
+    ]);
+
+    if (miawResult.status === 'rejected') {
+        // Return as 200 so messageFetcher.data is set and the client can show the error UI.
+        return data({ error: 'service' as const });
+    }
+
+    const navigateTo = intentResult.status === 'fulfilled' ? intentResult.value : null;
+    const responsePayload = navigateTo ? { ok: true, navigateTo } : { ok: true };
 
     // Mark that at least one message has been sent — future messages won't restart routing
     if (!session.messageSent) {
         const updated = { ...session, messageSent: true };
         const setCookie = await serializeMiawSession(updated, context);
-        return data({ ok: true }, { headers: { 'Set-Cookie': setCookie } });
+        return data(responsePayload, { headers: { 'Set-Cookie': setCookie } });
     }
 
-    return data({ ok: true });
+    return data(responsePayload);
 }
