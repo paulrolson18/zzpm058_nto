@@ -66,7 +66,7 @@ export function ChatPanel({
     isSessionReady,
     sessionError,
 }: ChatPanelProps) {
-    const inputDisabled = !isSessionReady || sessionError === 'config';
+    const inputDisabled = !isSessionReady || sessionError !== null;
 
     return (
         <div

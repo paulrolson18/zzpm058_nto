@@ -58,7 +58,7 @@ export function ChatInput({
                     }
                 }}
                 disabled={disabled}
-                placeholder={disabled ? 'Connecting…' : placeholder}
+                placeholder={placeholder}
                 aria-label="Message input"
                 className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />

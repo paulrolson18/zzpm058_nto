@@ -23,6 +23,8 @@ interface UseMiawEventsOptions {
     onAgentMessage: (text: string, messageId: string) => void;
     /** Called when the agent starts or stops typing. */
     onTyping: (isTyping: boolean) => void;
+    /** Called when the SSE connection fails (e.g. ERR_HTTP2_PROTOCOL_ERROR). */
+    onError?: () => void;
     /** Open the SSE connection only when true; close and discard it when false. */
     enabled: boolean;
 }
@@ -53,13 +55,15 @@ interface MiawMessageContent {
  * The native EventSource reconnects on its own; Last-Event-ID is forwarded automatically
  * via the browser's built-in reconnect mechanism.
  */
-export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, enabled }: UseMiawEventsOptions): {
+export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, onError, enabled }: UseMiawEventsOptions): {
     close: () => void;
 } {
     const onAgentMessageRef = useRef(onAgentMessage);
     const onTypingRef = useRef(onTyping);
+    const onErrorRef = useRef(onError);
     onAgentMessageRef.current = onAgentMessage;
     onTypingRef.current = onTyping;
+    onErrorRef.current = onError;
 
     // Holds the live EventSource so callers can close it synchronously without waiting for
     // the useEffect cleanup (which runs after paint and would allow a reconnect 401 cycle).
@@ -101,6 +105,10 @@ export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, enabled }: 
         es.addEventListener('CONVERSATION_TYPING_STOPPED_INDICATOR', () => {
             onTypingRef.current(false);
         });
+
+        es.onerror = () => {
+            onErrorRef.current?.();
+        };
 
         return () => {
             es.close();
