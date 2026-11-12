@@ -25,27 +25,23 @@ export interface LivekitTokenState {
     isError: boolean;
 }
 
+const RESET_STATE: LivekitTokenState = { token: null, livekitUrl: null, isError: false };
+
 /**
  * Fetches a LiveKit room token from the server.
  * Room lifecycle is managed by <LiveKitRoom> from @livekit/components-react.
  */
 export function useLivekitToken(tokenEndpoint: string, enabled: boolean): LivekitTokenState {
-    const [token, setToken] = useState<string | null>(null);
-    const [livekitUrl, setLivekitUrl] = useState<string | null>(null);
-    const [isError, setIsError] = useState(false);
+    const [state, setState] = useState<LivekitTokenState>(RESET_STATE);
 
     useEffect(() => {
         if (!enabled) {
-            setToken(null);
-            setLivekitUrl(null);
-            setIsError(false);
+            setState(RESET_STATE);
             return;
         }
 
         let cancelled = false;
-        setToken(null);
-        setLivekitUrl(null);
-        setIsError(false);
+        setState(RESET_STATE);
 
         logger.info('[runway] fetching token', { tokenEndpoint });
 
@@ -59,13 +55,12 @@ export function useLivekitToken(tokenEndpoint: string, enabled: boolean): Liveki
                 };
                 if (!cancelled) {
                     logger.info('[runway] token received', { livekitUrl: url });
-                    setToken(t);
-                    setLivekitUrl(url);
+                    setState({ token: t, livekitUrl: url, isError: false });
                 }
             } catch (error) {
                 if (!cancelled) {
                     logger.error('[runway] token fetch failed', { error: String(error) });
-                    setIsError(true);
+                    setState({ token: null, livekitUrl: null, isError: true });
                 }
             }
         };
@@ -76,5 +71,5 @@ export function useLivekitToken(tokenEndpoint: string, enabled: boolean): Liveki
         };
     }, [enabled, tokenEndpoint]);
 
-    return { token, livekitUrl, isError };
+    return state;
 }

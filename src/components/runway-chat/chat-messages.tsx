@@ -30,6 +30,13 @@ interface ChatMessagesProps {
 }
 
 
+function shouldShowSkeleton(
+    messages: ChatMessage[],
+    sessionError: 'config' | 'service' | null | undefined
+): boolean {
+    return messages.length === 0 && !sessionError;
+}
+
 function SessionError({ kind, onRetry }: { kind: 'config' | 'service'; onRetry?: () => void }) {
     if (kind === 'config') {
         return (
@@ -68,9 +75,7 @@ export function ChatMessages({
 }: ChatMessagesProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
     const lastMsgRef = useRef<HTMLDivElement>(null);
-    // Show skeleton until the first message arrives — covers both new sessions
-    // (waiting for SSE greeting) and returning sessions (waiting for history load).
-    const showSkeleton = messages.length === 0 && !sessionError;
+    const showSkeleton = shouldShowSkeleton(messages, sessionError);
 
     const lastMsg = messages[messages.length - 1];
 

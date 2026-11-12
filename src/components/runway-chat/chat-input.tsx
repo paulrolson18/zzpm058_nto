@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils';
 interface ChatInputProps {
     onSendMessage: (text: string) => void;
     onStartVoiceMode: () => void;
-    disabled?: boolean;
+    voiceDisabled?: boolean;
     placeholder?: string;
     className?: string;
 }
@@ -29,7 +29,7 @@ interface ChatInputProps {
 export function ChatInput({
     onSendMessage,
     onStartVoiceMode,
-    disabled = false,
+    voiceDisabled = false,
     placeholder = 'Ask Carter a question',
     className,
 }: ChatInputProps) {
@@ -38,7 +38,7 @@ export function ChatInput({
 
     const handleSend = () => {
         const trimmed = value.trim();
-        if (!trimmed || disabled) return;
+        if (!trimmed || voiceDisabled) return;
         onSendMessage(trimmed);
         setValue('');
         inputRef.current?.focus();
@@ -57,30 +57,30 @@ export function ChatInput({
                         handleSend();
                     }
                 }}
-                disabled={disabled}
-                placeholder={disabled ? 'Connecting…' : placeholder}
+                disabled={voiceDisabled}
+                placeholder={placeholder}
                 aria-label="Message input"
                 className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             />
             <button
                 type="button"
-                onClick={disabled ? undefined : onStartVoiceMode}
-                disabled={disabled}
+                onClick={voiceDisabled ? undefined : onStartVoiceMode}
+                disabled={voiceDisabled}
                 aria-label="Start voice mode"
                 className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    disabled ? 'cursor-not-allowed text-muted-foreground/40' : 'text-muted-foreground hover:bg-muted'
+                    voiceDisabled ? 'cursor-not-allowed text-muted-foreground/40' : 'text-muted-foreground hover:bg-muted'
                 )}>
                 <Mic className="size-4" aria-hidden />
             </button>
             <button
                 type="button"
                 onClick={handleSend}
-                disabled={!value.trim() || disabled}
+                disabled={!value.trim() || voiceDisabled}
                 aria-label="Send message"
                 className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                    value.trim() && !disabled
+                    value.trim() && !voiceDisabled
                         ? 'bg-muted text-foreground hover:bg-muted/80'
                         : 'cursor-not-allowed bg-muted/50 text-muted-foreground'
                 )}>

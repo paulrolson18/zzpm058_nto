@@ -20,6 +20,8 @@ import { useMiawEvents } from '@/hooks/use-miaw-events';
 import { parseStructuredResponse } from './parse-response';
 import { useNavigate } from '@/hooks/use-navigate';
 
+const GREETING_TIMEOUT_MS = 15_000;
+
 // ── TTS helpers ────────────────────────────────────────────────────────────────
 
 function stripMarkdown(text: string): string {
@@ -76,6 +78,12 @@ export function useRunwayChat({
     // Ref mirrors for stable callbacks
     const isVoiceModeRef = useRef(isVoiceMode);
     isVoiceModeRef.current = isVoiceMode;
+    const messagesRef = useRef(messages);
+    messagesRef.current = messages;
+    // Prevents onError from firing mid-send before the optimistic message commits to the ref.
+    const hasSentMessageRef = useRef(false);
+    // Distinguishes a retry DELETE from an end-session DELETE in sessionFetcher.data.
+    const isRetryingRef = useRef(false);
 
     // Speak function registered by ChatCharacter when LiveKit is ready
     const speakFnRef = useRef<((text: string) => void) | null>(null);
@@ -96,13 +104,15 @@ export function useRunwayChat({
             const kind = sessionFetcher.data.error === 'config' ? 'config' : 'service';
             setSessionError(kind);
         } else if ('conversationId' in sessionFetcher.data) {
-            // Only a POST response has conversationId; DELETE returns { ok: true } and must be ignored
-            // to avoid re-setting isSessionReady before the new session cookie is established.
             setIsSessionReady(true);
             setSessionError(null);
             if (sessionFetcher.data.hasHistory) {
                 void historyFetcher.load(historyEndpoint);
             }
+        } else if ('ok' in sessionFetcher.data && isRetryingRef.current) {
+            // Retry DELETE cleared the cookie — now create a fresh session.
+            isRetryingRef.current = false;
+            void sessionFetcher.submit(null, { method: 'POST', action: sessionEndpoint });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionFetcher.data]);
@@ -111,6 +121,17 @@ export function useRunwayChat({
         if (!historyFetcher.data?.messages.length) return;
         setMessages(historyFetcher.data.messages);
     }, [historyFetcher.data]);
+
+    // ── Greeting timeout — fallback for connections that hang without erroring ──
+    useEffect(() => {
+        if (!isSessionReady || messagesRef.current.length > 0) return;
+        const timer = setTimeout(() => {
+            if (messagesRef.current.length === 0) {
+                setSessionError('service');
+            }
+        }, GREETING_TIMEOUT_MS);
+        return () => clearTimeout(timer);
+    }, [isSessionReady]);
 
     // ── Message send errors (e.g. MIAW session expired / service down) ─────
     useEffect(() => {
@@ -133,9 +154,18 @@ export function useRunwayChat({
     const { close: closeMiawEvents } = useMiawEvents({
         eventsUrl: eventsEndpoint,
         enabled: isOpen && isSessionReady,
+        onError: useCallback(() => {
+            // Ignore mid-session reconnects and the race window during first send.
+            if (messagesRef.current.length === 0 && !hasSentMessageRef.current) {
+                setSessionError('service');
+            }
+        }, []),
         onAgentMessage: useCallback((text: string, messageId: string) => {
             // Receiving a message always means typing has stopped, regardless of event order
             setIsAgentTyping(false);
+            // If the greeting timeout fired before this message arrived, dismiss the error — the
+            // connection was just slow, not broken.
+            setSessionError((prev) => (prev === 'service' ? null : prev));
             if (sentIdsRef.current.has(messageId)) {
                 sentIdsRef.current.delete(messageId);
                 return;
@@ -157,6 +187,7 @@ export function useRunwayChat({
     const sendMessage = useCallback(
         (text: string) => {
             if (!text.trim() || !isSessionReady) return;
+            hasSentMessageRef.current = true;
             const id = crypto.randomUUID();
             sentIdsRef.current.add(id);
 
@@ -174,9 +205,14 @@ export function useRunwayChat({
 
     // ── Session retry ───────────────────────────────────────────────────────
     const retrySession = useCallback(() => {
+        hasSentMessageRef.current = false;
+        isRetryingRef.current = true;
+        // Clear the stale cookie before the POST so we always get a fresh conversation.
+        closeMiawEvents();
+        setIsSessionReady(false);
         setSessionError(null);
-        void sessionFetcher.submit(null, { method: 'POST', action: sessionEndpoint });
-    }, [sessionEndpoint, sessionFetcher]);
+        void sessionFetcher.submit(null, { method: 'DELETE', action: sessionEndpoint });
+    }, [sessionEndpoint, sessionFetcher, closeMiawEvents]);
 
     // ── Voice mode ──────────────────────────────────────────────────────────
     const startVoiceMode = useCallback(() => setIsVoiceMode(true), []);
@@ -188,6 +224,7 @@ export function useRunwayChat({
         // doesn't trigger an auto-reconnect 401 cycle (useEffect cleanup is async/post-paint).
         closeMiawEvents();
         void sessionFetcher.submit(null, { method: 'DELETE', action: sessionEndpoint });
+        hasSentMessageRef.current = false;
         setIsSessionReady(false);
         setIsVoiceMode(false);
         setIsOpen(false);
