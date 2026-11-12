@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { lazy, Suspense, useCallback, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef } from 'react';
 import { useCurrentSiteAndLocaleRef } from '@/hooks/use-current-site-and-locale-ref';
 import { RUNWAY_OPEN_EVENT, validateRunwayConfig, type RunwayConfig } from '@/utils/runway.utils';
 import { ChatFab } from './chat-fab';
@@ -41,6 +41,7 @@ function RunwayChatWidgetInner({
     voiceGreeting,
 }: RunwayChatWidgetProps) {
     const { siteRef, localeRef } = useCurrentSiteAndLocaleRef();
+
     const tokenEndpoint = config.tokenEndpoint ?? `/${siteRef}/${localeRef}/api/runway-token`;
 
     const sessionEndpoint = `/${siteRef}/${localeRef}/api/miaw-session`;
@@ -64,6 +65,12 @@ function RunwayChatWidgetInner({
         isSessionReady,
         sessionError,
     } = useRunwayChat({ sessionEndpoint, messageEndpoint, eventsEndpoint, historyEndpoint });
+
+    // Tracks whether the panel has ever been opened. Once true it stays true so
+    // ChatPanel (and the GIF inside it) remains mounted across open/close cycles.
+    // The panel slides in/out via its own CSS transition-transform.
+    const hasOpenedRef = useRef(false);
+    if (isOpen) hasOpenedRef.current = true;
 
     // Voice transcript bridge: user speech → add optimistic bubble + send to MIAW
     const handleUserTranscript = useCallback(
@@ -89,7 +96,7 @@ function RunwayChatWidgetInner({
         <>
             {!isOpen && <ChatFab onClick={() => setIsOpen(true)} />}
 
-            {isOpen && (
+            {hasOpenedRef.current && (
                 <Suspense fallback={null}>
                     <ChatPanel
                         isOpen={isOpen}

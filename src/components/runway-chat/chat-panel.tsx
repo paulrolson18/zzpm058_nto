@@ -67,6 +67,7 @@ export function ChatPanel({
     sessionError,
 }: ChatPanelProps) {
     const inputDisabled = !isSessionReady || sessionError !== null;
+    const voiceDisabled = inputDisabled || messages.length === 0;
 
     return (
         <div
@@ -98,7 +99,7 @@ export function ChatPanel({
                     characterVideoSrc={characterVideoSrc}
                     voiceGreeting={voiceGreeting}
                     agentName={agentName}
-                    disabled={inputDisabled}
+                    disabled={voiceDisabled}
                 />
             </div>
 
@@ -110,7 +111,7 @@ export function ChatPanel({
                 onRetrySession={onRetrySession}
             />
 
-            <ChatInput onSendMessage={onSendMessage} onStartVoiceMode={onStartVoiceMode} disabled={inputDisabled} />
+            <ChatInput onSendMessage={onSendMessage} onStartVoiceMode={onStartVoiceMode} voiceDisabled={voiceDisabled} />
         </div>
     );
 }

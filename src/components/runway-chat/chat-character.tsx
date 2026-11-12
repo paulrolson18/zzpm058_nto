@@ -64,6 +64,8 @@ interface PanelCharacterRoomProps {
   /** Greeting text spoken when the character first connects. Mic is locked until it finishes. */
   voiceGreeting?: string;
   agentName?: string;
+  /** Called when the first video frame plays — used by the parent to fade out the cover overlay. */
+  onVideoReady?: () => void;
 }
 
 function PanelCharacterRoom({
@@ -72,6 +74,7 @@ function PanelCharacterRoom({
   onRegisterSpeak,
   voiceGreeting = DEFAULT_VOICE_GREETING,
   agentName,
+  onVideoReady,
 }: PanelCharacterRoomProps) {
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [isGreeting, setIsGreeting] = useState(true);
@@ -162,9 +165,15 @@ function PanelCharacterRoom({
             trackRef={videoTrack}
             autoPlay
             playsInline
-            className="h-full w-full object-cover"
+            className={cn(
+              "h-full w-full object-cover transition-opacity duration-700",
+              isVideoReady ? "opacity-100" : "opacity-0",
+            )}
             aria-label="AI assistant character"
-            onPlay={() => setIsVideoReady(true)}
+            onPlay={() => {
+              setIsVideoReady(true);
+              onVideoReady?.();
+            }}
           />
         )}
       </div>
@@ -172,12 +181,12 @@ function PanelCharacterRoom({
       {/* Connecting overlay — fades out when the video's first frame is playing */}
       <div
         className={cn(
-          "absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-black/40 transition-opacity duration-700",
+          "absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 transition-opacity duration-700",
           isVideoReady ? "pointer-events-none opacity-0" : "opacity-100",
         )}
       >
-        <Loader2 className="size-6 animate-spin text-white" aria-hidden />
-        <p className="text-sm font-medium text-white">
+        <Loader2 className="size-6 animate-spin text-white [filter:drop-shadow(0_1px_3px_rgb(0_0_0/0.8))]" aria-hidden />
+        <p className="text-sm font-medium text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.8)]">
           Connecting to {agentName ?? "Carter"}
         </p>
       </div>
@@ -292,13 +301,36 @@ export function ChatCharacter({
   const showIdle = !isVoiceMode;
   const showTokenLoading = isVoiceMode && (!token || !livekitUrl);
 
+  // Ref for the dark cover overlay — manipulated directly so the fade starts in the same
+  // browser frame as onPlay, without waiting for a React render cycle.
+  const coverOverlayRef = useRef<HTMLDivElement>(null);
+  const handleVideoReady = useCallback(() => {
+    const el = coverOverlayRef.current;
+    if (!el) return;
+    el.style.transition = "opacity 700ms ease-in-out";
+    el.style.opacity = "0";
+    el.style.pointerEvents = "none";
+  }, []);
+
   return (
     <div
-      className="relative w-full shrink-0 overflow-hidden"
+      className="relative w-full shrink-0 overflow-hidden bg-black"
       style={{ aspectRatio: "16/9" }}
     >
       {/* GifBase at stable position 0 — never unmounts across state transitions */}
       <GifBase src={characterVideoSrc} />
+
+      {/* Dark cover — spans the full connection phase (token fetch → LiveKit mount → first video
+          frame). Sits above GifBase (z-auto) but below PanelCharacterRoom overlays (z-10/z-20)
+          so "Connecting to Carter" text remains visible. Faded out imperatively via ref when the
+          first video frame plays; unmounts when voice mode ends so it resets for the next call. */}
+      {isVoiceMode && (
+        <div
+          ref={coverOverlayRef}
+          className="absolute inset-0 z-[5] bg-black/60"
+          aria-hidden
+        />
+      )}
 
       {/* Idle overlay */}
       <div
@@ -327,12 +359,12 @@ export function ChatCharacter({
       {/* Token-loading overlay */}
       <div
         className={cn(
-          "absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40",
+          "absolute inset-0 flex flex-col items-center justify-center gap-2",
           showTokenLoading ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       >
-        <Loader2 className="size-6 animate-spin text-white" aria-hidden />
-        <p className="text-sm font-medium text-white">
+        <Loader2 className="size-6 animate-spin text-white [filter:drop-shadow(0_1px_3px_rgb(0_0_0/0.8))]" aria-hidden />
+        <p className="text-sm font-medium text-white [text-shadow:0_1px_3px_rgb(0_0_0/0.8)]">
           Connecting to {agentName}
         </p>
       </div>
@@ -354,6 +386,7 @@ export function ChatCharacter({
             onRegisterSpeak={onRegisterSpeak}
             voiceGreeting={voiceGreeting}
             agentName={agentName}
+            onVideoReady={handleVideoReady}
           />
         </LiveKitRoom>
       )}

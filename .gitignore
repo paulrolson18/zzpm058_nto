@@ -77,3 +77,6 @@ dw.json
 
 # Claude Code local config and worktrees
 .claude/
+
+# Graphify knowledge-graph output
+graphify-out/
