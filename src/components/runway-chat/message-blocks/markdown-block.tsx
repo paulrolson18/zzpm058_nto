@@ -33,14 +33,15 @@ function renderMarkdown(content: string): string {
         .filter(Boolean)
         .map((paragraph) => {
             const lines = paragraph.split('\n');
-            if (!lines.some((l) => l.startsWith('- '))) {
+            const isBullet = (l: string) => l.startsWith('- ') || l.startsWith('* ');
+            if (!lines.some(isBullet)) {
                 return `<p>${lines.map(applyInline).join('<br>')}</p>`;
             }
             // Segment consecutive list vs non-list lines to avoid <ul> inside <p>
             type Seg = { type: 'list' | 'text'; lines: string[] };
             const segments: Seg[] = [];
             for (const line of lines) {
-                const type = line.startsWith('- ') ? 'list' : 'text';
+                const type = isBullet(line) ? 'list' : 'text';
                 if (!segments.length || segments[segments.length - 1].type !== type) {
                     segments.push({ type, lines: [] });
                 }
