@@ -66,7 +66,8 @@ export async function loader({ context }: Route.LoaderArgs) {
         video: { roomJoin: true, room: roomName, canPublish: true, canSubscribe: true },
     });
 
-    // Dispatch the named agent to this specific room (explicit dispatch mode)
+    // Dispatch the named agent to this specific room (explicit dispatch mode).
+    // The agent is long-lived (close_on_disconnect=False), so skip dispatch if one already exists.
     const agentName = process.env.LIVEKIT_AGENT_NAME;
     if (agentName) {
         try {
@@ -79,19 +80,40 @@ export async function loader({ context }: Route.LoaderArgs) {
                 },
                 60
             );
-            const dispatchRes = await fetch(`${httpUrl}/twirp/livekit.AgentDispatchService/CreateDispatch`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${adminToken}`,
-                },
-                body: JSON.stringify({ room: roomName, agent_name: agentName }),
-            });
-            if (!dispatchRes.ok) {
-                const body = await dispatchRes.text().catch(() => '(unreadable)');
-                logger.warn(`Agent dispatch ${dispatchRes.status}: ${body}`);
-            } else {
-                logger.info(`Dispatched agent "${agentName}" to room "${roomName}"`);
+
+            let shouldDispatch = true;
+            try {
+                const listRes = await fetch(`${httpUrl}/twirp/livekit.AgentDispatchService/ListDispatch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+                    body: JSON.stringify({ room: roomName }),
+                });
+                if (listRes.ok) {
+                    const { agent_dispatches } = await listRes.json() as { agent_dispatches?: Array<{ agent_name: string }> };
+                    if (agent_dispatches?.some(d => d.agent_name === agentName)) {
+                        logger.info(`Agent "${agentName}" already dispatched for room "${roomName}" — skipping dispatch`);
+                        shouldDispatch = false;
+                    }
+                }
+            } catch (listError) {
+                logger.warn('ListDispatch failed, will create new dispatch', { error: listError });
+            }
+
+            if (shouldDispatch) {
+                const dispatchRes = await fetch(`${httpUrl}/twirp/livekit.AgentDispatchService/CreateDispatch`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${adminToken}`,
+                    },
+                    body: JSON.stringify({ room: roomName, agent_name: agentName }),
+                });
+                if (!dispatchRes.ok) {
+                    const body = await dispatchRes.text().catch(() => '(unreadable)');
+                    logger.warn(`Agent dispatch ${dispatchRes.status}: ${body}`);
+                } else {
+                    logger.info(`Dispatched agent "${agentName}" to room "${roomName}"`);
+                }
             }
         } catch (dispatchError) {
             logger.warn('Agent dispatch failed', { error: dispatchError });
