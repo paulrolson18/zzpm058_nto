@@ -39,8 +39,6 @@ import { createLogger } from "@/lib/logger";
 
 const logger = createLogger({ component: "runway-chat" });
 
-const DEFAULT_VOICE_GREETING =
-  "Hey! I'm Carter, your NTO stylist. What are we looking for today?";
 
 const GifBase = memo(({ src }: { src?: string }) =>
   src ? (
@@ -61,8 +59,6 @@ interface PanelCharacterRoomProps {
   onUserTranscript?: (text: string) => void;
   /** Called with a speak function on mount so the parent can trigger TTS; called with null on cleanup. */
   onRegisterSpeak?: (fn: ((text: string) => void) | null) => void;
-  /** Greeting text spoken when the character first connects. Mic is locked until it finishes. */
-  voiceGreeting?: string;
   agentName?: string;
   /** Called when the first video frame plays — used by the parent to fade out the cover overlay. */
   onVideoReady?: () => void;
@@ -72,7 +68,6 @@ function PanelCharacterRoom({
   onExit,
   onUserTranscript,
   onRegisterSpeak,
-  voiceGreeting = DEFAULT_VOICE_GREETING,
   agentName,
   onVideoReady,
 }: PanelCharacterRoomProps) {
@@ -112,8 +107,7 @@ function PanelCharacterRoom({
           text?: string;
         };
         if (parsed.type === "agent_ready") {
-          logger.info("[runway-chat] agent_ready — sending greeting");
-          sendJsonData({ type: "agent_text", text: voiceGreeting });
+          logger.info("[runway-chat] agent_ready received");
         }
         if (parsed.type === "user_transcript" && parsed.text) {
           onUserTranscript?.(parsed.text);
@@ -270,8 +264,6 @@ interface ChatCharacterProps {
   agentName?: string;
   /** Disables the voice mode button while the chat session is initializing. */
   disabled?: boolean;
-  /** Greeting spoken when the character first connects. Mic is locked until greeting finishes. */
-  voiceGreeting?: string;
 }
 
 export function ChatCharacter({
@@ -284,7 +276,6 @@ export function ChatCharacter({
   characterVideoSrc,
   agentName = "NTO Agent",
   disabled = false,
-  voiceGreeting,
 }: ChatCharacterProps) {
   const { token, livekitUrl, isError } = useLivekitToken(
     tokenEndpoint,
@@ -384,7 +375,6 @@ export function ChatCharacter({
             onExit={onStopVoiceMode}
             onUserTranscript={onUserTranscript}
             onRegisterSpeak={onRegisterSpeak}
-            voiceGreeting={voiceGreeting}
             agentName={agentName}
             onVideoReady={handleVideoReady}
           />
