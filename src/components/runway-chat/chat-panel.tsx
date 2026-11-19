@@ -38,7 +38,6 @@ interface ChatPanelProps {
     onUserTranscript?: (text: string) => void;
     onRegisterSpeak?: (fn: ((text: string) => void) | null) => void;
     characterVideoSrc?: string;
-    voiceGreeting?: string;
     isAgentTyping?: boolean;
     isSessionReady?: boolean;
     sessionError?: 'config' | 'service' | null;
@@ -61,7 +60,6 @@ export function ChatPanel({
     onUserTranscript,
     onRegisterSpeak,
     characterVideoSrc,
-    voiceGreeting,
     isAgentTyping,
     isSessionReady,
     sessionError,
@@ -97,7 +95,6 @@ export function ChatPanel({
                     onUserTranscript={onUserTranscript}
                     onRegisterSpeak={onRegisterSpeak}
                     characterVideoSrc={characterVideoSrc}
-                    voiceGreeting={voiceGreeting}
                     agentName={agentName}
                     disabled={voiceDisabled}
                 />

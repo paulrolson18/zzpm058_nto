@@ -29,8 +29,6 @@ interface RunwayChatWidgetProps {
     characterVideoSrc?: string;
     agentName?: string;
     agentSubtitle?: string;
-    /** Custom greeting spoken by the character when voice mode starts. Mic is locked until it finishes. */
-    voiceGreeting?: string;
 }
 
 function RunwayChatWidgetInner({
@@ -38,7 +36,6 @@ function RunwayChatWidgetInner({
     characterVideoSrc,
     agentName = 'Carter',
     agentSubtitle = 'AI Shopper Agent',
-    voiceGreeting,
 }: RunwayChatWidgetProps) {
     const { siteRef, localeRef } = useCurrentSiteAndLocaleRef();
 
@@ -118,7 +115,6 @@ function RunwayChatWidgetInner({
                         onRegisterSpeak={registerSpeak}
                         onUserTranscript={handleUserTranscript}
                         characterVideoSrc={characterVideoSrc}
-                        voiceGreeting={voiceGreeting}
                         isAgentTyping={isAgentTyping}
                         isSessionReady={isSessionReady}
                         sessionError={sessionError}
