@@ -24,8 +24,23 @@ const GREETING_TIMEOUT_MS = 15_000;
 
 // ── TTS helpers ────────────────────────────────────────────────────────────────
 
+/** Removes markdown syntax from text intended for TTS — keeps the readable content, drops the markers. */
 function stripMarkdown(text: string): string {
-    return text.replace(/\*\*(.+?)\*\*/gs, '$1').replace(/\*([^*\n]+?)\*/g, '$1');
+    return text
+        .replace(/^#{1,6}\s+/gm, '')            // headings
+        .replace(/^[-*_]{3,}\s*$/gm, '')         // horizontal rules
+        .replace(/^>\s?/gm, '')                  // blockquotes
+        .replace(/\*\*\*(.+?)\*\*\*/gs, '$1')    // bold+italic
+        .replace(/___(.+?)___/gs, '$1')
+        .replace(/\*\*(.+?)\*\*/gs, '$1')        // bold
+        .replace(/__(.+?)__/gs, '$1')
+        .replace(/\*([^*\n]+?)\*/g, '$1')        // italic
+        .replace(/_([^_\n]+?)_/g, '$1')
+        .replace(/~~(.+?)~~/gs, '$1')             // strikethrough
+        .replace(/`([^`\n]+?)`/g, '$1')           // inline code
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links — keep visible text
+        .replace(/^\d+\.\s+/gm, '')              // ordered list markers
+        .replace(/^[-*+]\s+/gm, '');             // unordered list markers
 }
 
 function extractSpeakableText(text: string): string {
@@ -90,6 +105,27 @@ export function useRunwayChat({
     const registerSpeak = useCallback((fn: ((text: string) => void) | null) => {
         speakFnRef.current = fn;
     }, []);
+
+    // Streaming TTS functions registered by ChatCharacter
+    const speakChunkFnRef = useRef<((text: string, messageId: string) => void) | null>(null);
+    const streamEndFnRef = useRef<((messageId: string) => void) | null>(null);
+    const registerSpeakChunk = useCallback((fn: ((text: string, messageId: string) => void) | null) => {
+        speakChunkFnRef.current = fn;
+    }, []);
+    const registerStreamEnd = useCallback((fn: ((messageId: string) => void) | null) => {
+        streamEndFnRef.current = fn;
+    }, []);
+
+    // Tracks which message IDs were already spoken via streaming tokens (TTS dedup guard)
+    const streamedMessageIdsRef = useRef(new Set<string>());
+    // Accumulates streaming tokens per messageId so the chat can render progressively
+    const streamingTokensRef = useRef(new Map<string, Array<{ type: string; index: number; data: unknown }>>());
+    // Only the first markdown token per turn speaks TTS; this set records turns already spoken
+    const hasSpokenTTSRef = useRef(new Set<string>());
+    // Turns that received a CONVERSATION_PROGRESS_INDICATOR (triggers preliminary message split)
+    const hasProgressRef = useRef(new Set<string>());
+    // Turns where agent_stream_end was already sent early (prevents double-sending on TYPING_STOPPED)
+    const streamEndSentRef = useRef(new Set<string>());
 
     // ── Session init ────────────────────────────────────────────────────────
     useEffect(() => {
@@ -170,14 +206,78 @@ export function useRunwayChat({
                 sentIdsRef.current.delete(messageId);
                 return;
             }
-            setMessages((prev) => [
-                ...prev,
-                { id: messageId || `agent-${Date.now()}`, role: 'agent', text, timestamp: new Date() },
-            ]);
-            // Speak the response through the LiveKit character when voice mode is active
+            const wasStreamed = streamingTokensRef.current.has(messageId);
+            streamingTokensRef.current.delete(messageId);
+            if (wasStreamed) {
+                // Replace the streaming placeholder with the final complete message text
+                setMessages((prev) =>
+                    prev.map((m) => (m.id === messageId ? { ...m, text } : m)),
+                );
+            } else {
+                setMessages((prev) => [
+                    ...prev,
+                    { id: messageId || `agent-${Date.now()}`, role: 'agent', text, timestamp: new Date() },
+                ]);
+            }
+            // Skip TTS — this message was already spoken via streaming tokens
+            if (streamedMessageIdsRef.current.has(messageId)) {
+                streamedMessageIdsRef.current.delete(messageId);
+                return;
+            }
+            // Fallback: speak via full message when streaming tokens were not available
             if (isVoiceModeRef.current && speakFnRef.current) {
                 const speakable = extractSpeakableText(text);
                 if (speakable) speakFnRef.current(speakable);
+            }
+        }, []),
+        onStreamingToken: useCallback((token: { type: string; index: number; data: unknown }, messageId: string) => {
+            // Accumulate token and update chat message progressively (all modes)
+            const tokens = streamingTokensRef.current.get(messageId) ?? [];
+            tokens.push(token);
+            streamingTokensRef.current.set(messageId, tokens);
+            const partialText = JSON.stringify({ response: tokens });
+            setIsAgentTyping(false);
+            setMessages((prev) => {
+                const exists = prev.some((m) => m.id === messageId);
+                if (!exists) {
+                    return [...prev, { id: messageId, role: 'agent', text: partialText, timestamp: new Date() }];
+                }
+                return prev.map((m) => (m.id === messageId ? { ...m, text: partialText } : m));
+            });
+            // TTS: only the very first markdown token per turn (preliminary acknowledgment)
+            if (token.type === 'markdown' && isVoiceModeRef.current && speakChunkFnRef.current
+                    && !hasSpokenTTSRef.current.has(messageId)) {
+                const content = (token.data as { content?: string } | undefined)?.content ?? '';
+                if (content) {
+                    hasSpokenTTSRef.current.add(messageId);
+                    streamedMessageIdsRef.current.add(messageId);
+                    speakChunkFnRef.current(stripMarkdown(content), messageId);
+                }
+            }
+        }, []),
+        onStreamEnd: useCallback((messageId: string) => {
+            // Skip if stream_end was already sent early when the progress indicator arrived
+            if (streamEndSentRef.current.has(messageId)) return;
+            if (isVoiceModeRef.current && streamEndFnRef.current
+                    && streamedMessageIdsRef.current.has(messageId)) {
+                streamEndFnRef.current(messageId);
+            }
+        }, []),
+        onProgressIndicator: useCallback((messageId: string) => {
+            if (hasProgressRef.current.has(messageId)) return;
+            hasProgressRef.current.add(messageId);
+            // Split: lock the preliminary message under a stable id, start fresh for the actual response
+            if (streamingTokensRef.current.has(messageId)) {
+                streamingTokensRef.current.delete(messageId);
+                setMessages((prev) =>
+                    prev.map((m) => (m.id === messageId ? { ...m, id: `${messageId}-prelim` } : m)),
+                );
+            }
+            // End the streaming TTS immediately so the agent finishes the preliminary text
+            if (isVoiceModeRef.current && streamEndFnRef.current
+                    && hasSpokenTTSRef.current.has(messageId)) {
+                streamEndSentRef.current.add(messageId);
+                streamEndFnRef.current(messageId);
             }
         }, []),
         onTyping: useCallback((isTyping: boolean) => setIsAgentTyping(isTyping), []),
@@ -232,6 +332,11 @@ export function useRunwayChat({
         setMessages([]);
         setIsAgentTyping(false);
         sentIdsRef.current.clear();
+        streamedMessageIdsRef.current.clear();
+        streamingTokensRef.current.clear();
+        hasSpokenTTSRef.current.clear();
+        hasProgressRef.current.clear();
+        streamEndSentRef.current.clear();
     }, [sessionEndpoint, sessionFetcher, closeMiawEvents]);
 
     const clearMessages = useCallback(() => setMessages([]), []);
@@ -248,6 +353,8 @@ export function useRunwayChat({
         endSession,
         retrySession,
         registerSpeak,
+        registerSpeakChunk,
+        registerStreamEnd,
         isAgentTyping,
         isSessionReady,
         sessionError,

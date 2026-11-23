@@ -58,6 +58,8 @@ function RunwayChatWidgetInner({
         endSession,
         retrySession,
         registerSpeak,
+        registerSpeakChunk,
+        registerStreamEnd,
         isAgentTyping,
         isSessionReady,
         sessionError,
@@ -113,6 +115,8 @@ function RunwayChatWidgetInner({
                         onEndSession={endSession}
                         onRetrySession={retrySession}
                         onRegisterSpeak={registerSpeak}
+                        onRegisterSpeakChunk={registerSpeakChunk}
+                        onRegisterStreamEnd={registerStreamEnd}
                         onUserTranscript={handleUserTranscript}
                         characterVideoSrc={characterVideoSrc}
                         isAgentTyping={isAgentTyping}

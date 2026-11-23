@@ -27,6 +27,20 @@ interface UseMiawEventsOptions {
     onError?: () => void;
     /** Open the SSE connection only when true; close and discard it when false. */
     enabled: boolean;
+    /**
+     * Called for each streaming token before the full message is assembled.
+     * Fires for all token types (markdown, product_carousel, suggestions).
+     * `messageId` matches the final CONVERSATION_MESSAGE identifier.
+     */
+    onStreamingToken?: (token: { type: string; index: number; data: unknown }, messageId: string) => void;
+    /** Called when the typing-stopped indicator fires, signalling the end of a streaming turn. */
+    onStreamEnd?: (messageId: string) => void;
+    /**
+     * Called when a CONVERSATION_PROGRESS_INDICATOR arrives, signalling tool execution between
+     * the preliminary streaming phase and the actual response tokens. `messageId` is the
+     * targetMessageIdentifier of the active streaming turn.
+     */
+    onProgressIndicator?: (messageId: string) => void;
 }
 
 /** Parsed shape of a MIAW CONVERSATION_MESSAGE event payload. */
@@ -55,15 +69,21 @@ interface MiawMessageContent {
  * The native EventSource reconnects on its own; Last-Event-ID is forwarded automatically
  * via the browser's built-in reconnect mechanism.
  */
-export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, onError, enabled }: UseMiawEventsOptions): {
+export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, onError, enabled, onStreamingToken, onStreamEnd, onProgressIndicator }: UseMiawEventsOptions): {
     close: () => void;
 } {
     const onAgentMessageRef = useRef(onAgentMessage);
     const onTypingRef = useRef(onTyping);
     const onErrorRef = useRef(onError);
+    const onStreamingTokenRef = useRef(onStreamingToken);
+    const onStreamEndRef = useRef(onStreamEnd);
+    const onProgressIndicatorRef = useRef(onProgressIndicator);
     onAgentMessageRef.current = onAgentMessage;
     onTypingRef.current = onTyping;
     onErrorRef.current = onError;
+    onStreamingTokenRef.current = onStreamingToken;
+    onStreamEndRef.current = onStreamEnd;
+    onProgressIndicatorRef.current = onProgressIndicator;
 
     // Holds the live EventSource so callers can close it synchronously without waiting for
     // the useEffect cleanup (which runs after paint and would allow a reconnect 401 cycle).
@@ -74,6 +94,46 @@ export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, onError, en
 
         const es = new EventSource(eventsUrl);
         esRef.current = es;
+
+        // Tracks the targetMessageIdentifier of the current streaming turn so the
+        // typing-stopped handler can emit onStreamEnd with the right id.
+        let currentStreamMessageId = '';
+
+        es.addEventListener('CONVERSATION_STREAMING_TOKEN', (event) => {
+            try {
+                const outer = JSON.parse(event.data as string) as { conversationEntry?: { entryPayload?: string } };
+                const entryPayload = outer.conversationEntry?.entryPayload;
+                if (!entryPayload) return;
+                const payload = JSON.parse(entryPayload) as {
+                    streamingToken?: {
+                        targetMessageIdentifier?: string;
+                        token?: { text?: string };
+                    };
+                };
+                const st = payload.streamingToken;
+                if (!st) return;
+                const messageId = st.targetMessageIdentifier ?? '';
+                const tokenText = st.token?.text ?? '';
+                if (!tokenText || !messageId) return;
+                const parsed = JSON.parse(tokenText) as { type?: string; index?: number; data?: unknown };
+                if (parsed.type && parsed.index !== undefined) {
+                    currentStreamMessageId = messageId;
+                    onStreamingTokenRef.current?.({ type: parsed.type, index: parsed.index, data: parsed.data }, messageId);
+                }
+            } catch {
+                // malformed token — ignore, final CONVERSATION_MESSAGE is the fallback
+            }
+        });
+
+        es.addEventListener('CONVERSATION_PROGRESS_INDICATOR', (event) => {
+            try {
+                const outer = JSON.parse(event.data as string) as { conversationEntry?: { entryPayload?: string } };
+                if (!outer.conversationEntry?.entryPayload || !currentStreamMessageId) return;
+                onProgressIndicatorRef.current?.(currentStreamMessageId);
+            } catch {
+                // malformed — ignore
+            }
+        });
 
         es.addEventListener('CONVERSATION_MESSAGE', (event) => {
             try {
@@ -104,6 +164,10 @@ export function useMiawEvents({ eventsUrl, onAgentMessage, onTyping, onError, en
 
         es.addEventListener('CONVERSATION_TYPING_STOPPED_INDICATOR', () => {
             onTypingRef.current(false);
+            if (currentStreamMessageId) {
+                onStreamEndRef.current?.(currentStreamMessageId);
+                currentStreamMessageId = '';
+            }
         });
 
         es.onerror = () => {

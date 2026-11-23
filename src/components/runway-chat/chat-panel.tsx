@@ -37,6 +37,8 @@ interface ChatPanelProps {
     onRetrySession?: () => void;
     onUserTranscript?: (text: string) => void;
     onRegisterSpeak?: (fn: ((text: string) => void) | null) => void;
+    onRegisterSpeakChunk?: (fn: ((text: string, messageId: string) => void) | null) => void;
+    onRegisterStreamEnd?: (fn: ((messageId: string) => void) | null) => void;
     characterVideoSrc?: string;
     isAgentTyping?: boolean;
     isSessionReady?: boolean;
@@ -59,6 +61,8 @@ export function ChatPanel({
     onRetrySession,
     onUserTranscript,
     onRegisterSpeak,
+    onRegisterSpeakChunk,
+    onRegisterStreamEnd,
     characterVideoSrc,
     isAgentTyping,
     isSessionReady,
@@ -94,6 +98,8 @@ export function ChatPanel({
                     onStopVoiceMode={onStopVoiceMode}
                     onUserTranscript={onUserTranscript}
                     onRegisterSpeak={onRegisterSpeak}
+                    onRegisterSpeakChunk={onRegisterSpeakChunk}
+                    onRegisterStreamEnd={onRegisterStreamEnd}
                     characterVideoSrc={characterVideoSrc}
                     agentName={agentName}
                     disabled={voiceDisabled}
