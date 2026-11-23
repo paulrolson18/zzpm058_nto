@@ -59,6 +59,10 @@ interface PanelCharacterRoomProps {
   onUserTranscript?: (text: string) => void;
   /** Called with a speak function on mount so the parent can trigger TTS; called with null on cleanup. */
   onRegisterSpeak?: (fn: ((text: string) => void) | null) => void;
+  /** Called with a chunk-speak function for streaming TTS; called with null on cleanup. */
+  onRegisterSpeakChunk?: (fn: ((text: string, messageId: string) => void) | null) => void;
+  /** Called with a stream-end function for streaming TTS; called with null on cleanup. */
+  onRegisterStreamEnd?: (fn: ((messageId: string) => void) | null) => void;
   agentName?: string;
   /** Called when the first video frame plays — used by the parent to fade out the cover overlay. */
   onVideoReady?: () => void;
@@ -68,6 +72,8 @@ function PanelCharacterRoom({
   onExit,
   onUserTranscript,
   onRegisterSpeak,
+  onRegisterSpeakChunk,
+  onRegisterStreamEnd,
   agentName,
   onVideoReady,
 }: PanelCharacterRoomProps) {
@@ -126,13 +132,21 @@ function PanelCharacterRoom({
     };
   }, [room, onUserTranscript, sendJsonData]);
 
-  // Register the speak function so use-runway-chat can trigger TTS on agent replies
+  // Register speak functions so use-runway-chat can trigger TTS on agent replies
   useEffect(() => {
     onRegisterSpeak?.((text) => sendJsonData({ type: "agent_text", text }));
+    onRegisterSpeakChunk?.((text, messageId) =>
+      sendJsonData({ type: "agent_text_chunk", text, messageId }),
+    );
+    onRegisterStreamEnd?.((messageId) =>
+      sendJsonData({ type: "agent_stream_end", messageId }),
+    );
     return () => {
       onRegisterSpeak?.(null);
+      onRegisterSpeakChunk?.(null);
+      onRegisterStreamEnd?.(null);
     };
-  }, [sendJsonData, onRegisterSpeak]);
+  }, [sendJsonData, onRegisterSpeak, onRegisterSpeakChunk, onRegisterStreamEnd]);
 
   const toggleMic = useCallback(() => {
     setIsMicMuted((prev) => {
@@ -260,6 +274,10 @@ interface ChatCharacterProps {
   onUserTranscript?: (text: string) => void;
   /** Called with a speak function on LiveKit connect; null on disconnect. */
   onRegisterSpeak?: (fn: ((text: string) => void) | null) => void;
+  /** Called with a chunk-speak function for streaming TTS; called with null on disconnect. */
+  onRegisterSpeakChunk?: (fn: ((text: string, messageId: string) => void) | null) => void;
+  /** Called with a stream-end function for streaming TTS; called with null on disconnect. */
+  onRegisterStreamEnd?: (fn: ((messageId: string) => void) | null) => void;
   characterVideoSrc?: string;
   agentName?: string;
   /** Disables the voice mode button while the chat session is initializing. */
@@ -273,6 +291,8 @@ export function ChatCharacter({
   onStopVoiceMode,
   onUserTranscript,
   onRegisterSpeak,
+  onRegisterSpeakChunk,
+  onRegisterStreamEnd,
   characterVideoSrc,
   agentName = "NTO Agent",
   disabled = false,
@@ -375,6 +395,8 @@ export function ChatCharacter({
             onExit={onStopVoiceMode}
             onUserTranscript={onUserTranscript}
             onRegisterSpeak={onRegisterSpeak}
+            onRegisterSpeakChunk={onRegisterSpeakChunk}
+            onRegisterStreamEnd={onRegisterStreamEnd}
             agentName={agentName}
             onVideoReady={handleVideoReady}
           />

@@ -74,20 +74,32 @@ export function ChatMessages({
     className,
 }: ChatMessagesProps) {
     const bottomRef = useRef<HTMLDivElement>(null);
-    const lastMsgRef = useRef<HTMLDivElement>(null);
+    const lastUserMsgRef = useRef<HTMLDivElement>(null);
+    // Resets to false when the user sends a message, becomes true once the first agent message
+    // appears. All subsequent agent events (streaming updates, second bubble) are ignored.
+    const hasScrolledForResponseRef = useRef(false);
     const showSkeleton = shouldShowSkeleton(messages, sessionError);
 
     const lastMsg = messages[messages.length - 1];
 
     useEffect(() => {
-        // Agent messages: scroll to the top of the message so the first text block is visible,
-        // not the bottom of a product carousel.
-        // Everything else (user message, typing indicator): scroll to absolute bottom.
-        if (lastMsg?.role === 'agent' && !isAgentTyping) {
-            lastMsgRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        } else {
+        // User message: pin it to the top of the viewport so the response unfolds below.
+        if (lastMsg?.role === 'user') {
+            hasScrolledForResponseRef.current = false;
+            lastUserMsgRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+        }
+        // Typing indicator while awaiting the first response.
+        if (isAgentTyping && !hasScrolledForResponseRef.current) {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+            return;
+        }
+        // First agent message in this turn: scroll once, then stop.
+        if (lastMsg?.role === 'agent' && !hasScrolledForResponseRef.current) {
+            hasScrolledForResponseRef.current = true;
             bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
+        // Streaming updates and additional agent bubbles: no scroll.
     }, [messages, isAgentTyping, lastMsg?.role]);
 
     return (
@@ -109,14 +121,12 @@ export function ChatMessages({
                         msg.role === 'user' ? (
                             <div
                                 key={msg.id}
+                                ref={i === messages.length - 1 ? lastUserMsgRef : undefined}
                                 className="ml-auto max-w-[80%] rounded-2xl bg-primary px-4 py-2.5 text-sm text-primary-foreground">
                                 {msg.text}
                             </div>
                         ) : (
-                            <div
-                                key={msg.id}
-                                ref={i === messages.length - 1 ? lastMsgRef : undefined}
-                                className="w-full">
+                            <div key={msg.id} className="w-full">
                                 <MessageContent text={msg.text} onSuggestionClick={onSendMessage} />
                             </div>
                         )

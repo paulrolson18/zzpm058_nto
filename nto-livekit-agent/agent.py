@@ -77,6 +77,28 @@ async def my_agent(ctx: JobContext):
         _avatar_tts_ready = asyncio.Event()
         _avatar_start_lock = asyncio.Lock()
 
+        # Streaming TTS: one asyncio.Queue per active messageId
+        _stream_queues: dict[str, asyncio.Queue] = {}
+
+        async def _speak_stream(message_id: str, q: asyncio.Queue):
+            try:
+                await asyncio.wait_for(_avatar_tts_ready.wait(), timeout=120.0)
+            except asyncio.TimeoutError:
+                print("[WARN] Avatar video not ready after 120s, skipping stream TTS", flush=True)
+                _publish({"type": "speech_finished"})
+                _stream_queues.pop(message_id, None)
+                return
+            while _browser_active["on"]:
+                item = await q.get()
+                if item is None:  # end sentinel — all chunks spoken
+                    break
+                try:
+                    await session.say(item)
+                except RuntimeError:
+                    break
+            _publish({"type": "speech_finished"})
+            _stream_queues.pop(message_id, None)
+
         async def _start_avatar():
             async with _avatar_start_lock:
                 if _avatar["ref"] is not None:
@@ -180,6 +202,19 @@ async def my_agent(ctx: JobContext):
                                 return
                             _publish({"type": "speech_finished"})
                         asyncio.create_task(_speak_and_notify())
+                elif msg.get("type") == "agent_text_chunk":
+                    text = msg.get("text", "")
+                    message_id = msg.get("messageId", "")
+                    if text and message_id and _browser_active["on"]:
+                        if message_id not in _stream_queues:
+                            q: asyncio.Queue = asyncio.Queue()
+                            _stream_queues[message_id] = q
+                            asyncio.create_task(_speak_stream(message_id, q))
+                        _stream_queues[message_id].put_nowait(text)
+                elif msg.get("type") == "agent_stream_end":
+                    message_id = msg.get("messageId", "")
+                    if message_id in _stream_queues:
+                        _stream_queues[message_id].put_nowait(None)
                 elif msg.get("type") == "voice_mode":
                     enabled = bool(msg.get("enabled", False))
                     session.input.set_audio_enabled(enabled)
